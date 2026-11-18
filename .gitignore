@@ -69,3 +69,7 @@ scratch/
 tests/fixtures/phase0-domains.txt
 data/phase0/
 
+
+# --- Local tool caches ---
+.cache/
+
