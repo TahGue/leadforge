@@ -99,7 +99,7 @@ Rules: secrets never in logs, never in error messages, never in client bundles. 
 ## 7. PII protection
 
 - Minimization: only work contact data, no special categories, no home data.
-- At-rest: full-disk encryption on host; column-level encryption (`pgcrypto` or app-level envelope) for consent evidence and contact PII in regulated deployments.
+- At-rest: full-disk encryption on the host is required. Column-level encryption for consent evidence is supported by the schema (`Json` evidence + key separation) but is not enabled by default; enable it before storing special-category data, which v1 does not collect.
 - In transit: TLS everywhere, Postgres TLS optional on private network (recommended on).
 - Access: audit every read of a contact detail by a non-owner role (v2), every export.
 - Logs: never log email bodies, full email addresses (mask `a***@domain`), tokens, or page content.

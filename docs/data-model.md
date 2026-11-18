@@ -151,7 +151,7 @@ Illegal transitions rejected in a single `assertTransition()` in the domain laye
 
 ## 4. Multi-tenancy and RLS
 
-Application-level scoping is mandatory but insufficient. Enable Postgres RLS on every org-scoped table:
+Application-level scoping is mandatory but insufficient. The optional migration `packages/database/sql/0002_rls.sql` enables RLS on every organization-scoped table (apply with `node scripts/enable-rls.mjs`):
 
 ```sql
 ALTER TABLE companies ENABLE ROW LEVEL SECURITY;

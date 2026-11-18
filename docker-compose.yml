@@ -1,16 +1,31 @@
-# LeadForge — local infrastructure
+# LeadForge — application stack
 #
-# Scope of this file: the services required before application code exists.
-# Later phases add (do not add them early — each one costs operational attention):
-#   Phase 4: minio            (content-addressed page artifacts)
-#   Phase 5: ollama           (local classification; can also run natively)
-#   Phase 9: postfix, opendkim
-#   Phase 10: opensearch      (only after Postgres FTS is proven insufficient)
+#   docker compose up -d --build     # web, worker, postgres, redis, migrate
+#   docker compose logs -f web       # follow
+#   docker compose run --rm migrate  # re-apply migrations
 #
-# Rules: pinned tags, healthchecks, loopback-bound ports, named volumes,
-# no host networking, no default credentials in production.
+# Mail delivery is a separate, gated overlay: docker-compose.mail.yml.
+# It is NOT started by default because outbound mail must be a deliberate act.
 
 name: leadforge
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql://${POSTGRES_USER:-leadforge}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-leadforge}?schema=public
+  REDIS_URL: redis://redis:6379/0
+  APP_URL: ${APP_URL:-http://localhost:3000}
+  SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
+  UNSUBSCRIBE_SIGNING_KEY: ${UNSUBSCRIBE_SIGNING_KEY:-}
+  MAIL_ENABLED: ${MAIL_ENABLED:-false}
+  MAIL_TEST_ALLOWLIST: ${MAIL_TEST_ALLOWLIST:-}
+  MAIL_POSTAL_ADDRESS: ${MAIL_POSTAL_ADDRESS:-}
+  SMTP_HOST: ${SMTP_HOST:-postfix}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: ${SMTP_FROM:-outreach@localhost}
+  SMTP_FROM_NAME: ${SMTP_FROM_NAME:-LeadForge}
+  BOUNCE_INGEST_KEY: ${BOUNCE_INGEST_KEY:-}
+  NODE_ENV: production
 
 services:
   postgres:
@@ -18,13 +33,9 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-leadforge}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-only}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-leadforge}
-      # deterministic collation for reproducible indexes
       POSTGRES_INITDB_ARGS: "--data-checksums"
-    ports:
-      # loopback only — never publish a database port
-      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -33,17 +44,12 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
-    stop_grace_period: 30s
-    shm_size: 256mb
-    networks:
-      - leadforge_net
+    networks: [internal]
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
-    ports:
-      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -51,15 +57,95 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
-      start_period: 5s
-    stop_grace_period: 30s
-    networks:
-      - leadforge_net
+    networks: [internal]
+
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy", "--schema", "packages/database/prisma/schema.prisma"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-leadforge}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-leadforge}?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks: [internal]
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    environment: *app-env
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks: [internal, edge]
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      WORKER_POLL_MS: ${WORKER_POLL_MS:-15000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks: [internal]
+
+  # Python crawl/extract worker (opt-in: it makes outbound HTTP requests).
+  crawler:
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+    restart: unless-stopped
+    command: ["python", "-m", "leadforge.worker"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-leadforge}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-leadforge}?schema=public
+      CRAWLER_USER_AGENT: ${CRAWLER_USER_AGENT:-LeadForgeBot/0.1 (+https://localhost/bot)}
+      CRAWLER_DELAY_MS: ${CRAWLER_DELAY_MS:-2000}
+    volumes:
+      - artifacts:/app/data/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    profiles: ["crawler"]
+    networks: [internal, egress]
 
 volumes:
   pgdata:
   redisdata:
+  artifacts:
 
 networks:
-  leadforge_net:
+  internal:
+    driver: bridge
+    internal: true
+  edge:
+    driver: bridge
+  # Crawler traffic only; no inbound access to internal services.
+  egress:
     driver: bridge

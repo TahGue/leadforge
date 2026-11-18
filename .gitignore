@@ -73,3 +73,21 @@ data/phase0/
 # --- Local tool caches ---
 .cache/
 
+
+# --- pnpm local state ---
+.pnpm-store/
+.pnpm-cache/
+
+.home/
+
+
+# --- Local dev harness state ---
+.pgdata/
+.uv-cache/
+.tools/
+.npm-cache/
+.npmrc.local
+data/artifacts/
+.pytest_cache/
+pytest-cache-files-*/
+

@@ -1,0 +1,878 @@
+// LeadForge schema ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â source of truth for all business state.
+// See docs/data-model.md for invariants and rationale.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  OWNER
+  ADMIN
+  ANALYST
+  VIEWER
+}
+
+enum CompanyStatus {
+  DRAFT
+  ACTIVE
+  STALE
+  ARCHIVED
+}
+
+enum ContactType {
+  PERSON
+  GENERIC_BUSINESS
+}
+
+enum ContactStatus {
+  CANDIDATE
+  ACTIVE
+  ARCHIVED
+}
+
+enum EmailStatus {
+  DISCOVERED
+  SYNTAX_VALID
+  DNS_VALID
+  MX_VALID
+  DELIVERABILITY_UNKNOWN
+  RISKY
+  UNDELIVERABLE
+  SUPPRESSED
+}
+
+enum CandidateKind {
+  EMAIL
+  COMPANY
+  PERSON
+}
+
+enum CandidateStatus {
+  PENDING
+  PROMOTED
+  REJECTED
+}
+
+enum RunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum CrawlTargetStatus {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+  BLOCKED
+}
+
+enum CampaignStatus {
+  DRAFT
+  REVIEW
+  SCHEDULED
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum RecipientStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+  EXCLUDED
+  SUPPRESSED
+}
+
+enum SuppressionReason {
+  UNSUBSCRIBED
+  COMPLAINT
+  HARD_BOUNCE
+  MANUAL
+  LEGAL_OBJECTION
+}
+
+enum EligibilityOutcome {
+  ELIGIBLE
+  NOT_ELIGIBLE
+  NEEDS_REVIEW
+  SUPPRESSED
+  UNKNOWN_JURISDICTION
+}
+
+enum BasisType {
+  CONSENT
+  LEGITIMATE_INTEREST
+  CONTRACT
+  LEGAL_OBLIGATION
+}
+
+enum ProfileStatus {
+  DRAFT
+  APPROVED
+  RETIRED
+}
+
+enum ImportStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy & identity
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  countryCode String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  memberships      Membership[]
+  apiKeys          ApiKey[]
+  companies        Company[]
+  contacts         Contact[]
+  evidence         SourceEvidence[]
+  discoveryProjects DiscoveryProject[]
+  campaigns        Campaign[]
+  sources          Source[]
+  lawfulBases      LawfulBasisRecord[]
+  consents         ConsentRecord[]
+  suppressions     SuppressionEntry[]
+  decisions        EligibilityDecision[]
+  templates        EmailTemplate[]
+  events           EmailEvent[]
+  auditLogs        AuditLog[]
+  imports          ImportJob[]
+  dataRequests     DataSubjectRequest[]
+  crawlTargets     CrawlTarget[]
+  candidates       ExtractionCandidate[]
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String?
+  totpSecret   String?
+  status       String    @default("ACTIVE")
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  memberships Membership[]
+  sessions    Session[]
+  auditLogs   AuditLog[]
+  reviews     ExtractionCandidate[] @relation("Reviewer")
+}
+
+model Membership {
+  userId         String
+  organizationId String
+  role           Role      @default(VIEWER)
+  createdAt      DateTime  @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@id([userId, organizationId])
+  @@index([organizationId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  revokedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model ApiKey {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  prefix         String    @unique
+  keyHash        String
+  scopes         String[]  @default([])
+  lastUsedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  revokedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+// ---------------------------------------------------------------------------
+// Companies, domains
+// ---------------------------------------------------------------------------
+
+model Company {
+  id             String        @id @default(cuid())
+  organizationId String
+  name           String
+  legalName      String?
+  description    String?       @db.Text
+  countryCode    String?
+  region         String?
+  city           String?
+  industry       String?
+  employeeRange  String?
+  revenueRange   String?
+  foundedYear    Int?
+  website        String?
+  status         CompanyStatus @default(ACTIVE)
+  confidence     Float         @default(0)
+  firstSeenAt    DateTime      @default(now())
+  lastSeenAt     DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  domains      CompanyDomain[]
+  contacts     Contact[]
+  evidence     SourceEvidence[]
+  candidates   ExtractionCandidate[]
+
+  @@unique([organizationId, name, countryCode])
+  @@index([organizationId, updatedAt(sort: Desc), id])
+  @@index([organizationId, status])
+  @@index([countryCode, industry])
+  @@index([organizationId, createdAt(sort: Desc)])
+}
+
+model Domain {
+  id                String    @id @default(cuid())
+  domain            String    @unique
+  registrableDomain String
+  tld               String
+  status            String    @default("ACTIVE")
+  lastCrawledAt     DateTime?
+  nextCrawlAt       DateTime?
+  cooldownUntil     DateTime?
+  robotsHash        String?
+  crawlBudgetUsed   Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  companyDomains CompanyDomain[]
+  evidence       SourceEvidence[]
+  crawlTargets   CrawlTarget[]
+  verification   DomainHealth?
+
+  @@index([nextCrawlAt])
+  @@index([cooldownUntil])
+}
+
+model CompanyDomain {
+  companyId  String
+  domainId   String
+  isPrimary  Boolean   @default(false)
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  domain  Domain  @relation(fields: [domainId], references: [id], onDelete: Restrict)
+
+  @@id([companyId, domainId])
+  @@unique([domainId])
+  @@index([companyId])
+}
+
+model DomainHealth {
+  domainId         String   @id
+  mxPresent        Boolean  @default(false)
+  spfPresent       Boolean  @default(false)
+  dmarcPresent     Boolean  @default(false)
+  catchAllSuspected Boolean @default(false)
+  lastCheckedAt    DateTime @default(now())
+
+  domain Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Contacts & emails
+// ---------------------------------------------------------------------------
+
+model Contact {
+  id             String        @id @default(cuid())
+  organizationId String
+  companyId      String
+  type           ContactType   @default(PERSON)
+  firstName      String?
+  lastName       String?
+  jobTitle       String?
+  jobFunction    String?
+  seniority      String?
+  department     String?
+  confidence     Float         @default(0)
+  status         ContactStatus @default(ACTIVE)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  emails       ContactEmail[]
+  evidence     SourceEvidence[]
+
+  @@index([companyId])
+  @@index([organizationId, updatedAt(sort: Desc)])
+  @@index([organizationId, lastName, firstName])
+}
+
+model EmailAddress {
+  id                    String      @id @default(cuid())
+  address               String
+  normalized            String      @unique
+  localPart             String
+  domain                String
+  status                EmailStatus @default(DISCOVERED)
+  isRoleAccount         Boolean     @default(false)
+  isDisposable          Boolean     @default(false)
+  isFreeProvider        Boolean     @default(false)
+  patternInferred       Boolean     @default(false)
+  firstSeenAt           DateTime    @default(now())
+  lastVerifiedAt        DateTime?
+  verificationExpiresAt DateTime?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  contacts      ContactEmail[]
+  evidence      SourceEvidence[]
+  verifications EmailVerification[]
+  decisions     EligibilityDecision[]
+  recipients    CampaignRecipient[]
+  events        EmailEvent[]
+  consents      ConsentRecord[]
+  lawfulBases   LawfulBasisRecord[]
+  dataRequests  DataSubjectRequest[]
+
+  @@index([domain])
+  @@index([status])
+  @@index([domain, status])
+}
+
+model ContactEmail {
+  contactId  String
+  emailId    String
+  isPrimary  Boolean @default(false)
+  label      String  @default("WORK")
+  confidence Float   @default(0)
+  createdAt  DateTime @default(now())
+
+  contact Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  email   EmailAddress @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, emailId])
+  @@index([emailId])
+}
+
+model EmailPattern {
+  id          String   @id @default(cuid())
+  domain      String
+  pattern     String
+  confidence  Float    @default(0)
+  sampleCount Int      @default(0)
+  source      String   @default("OBSERVED")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([domain, pattern])
+}
+
+// ---------------------------------------------------------------------------
+// Sources, discovery, crawl
+// ---------------------------------------------------------------------------
+
+model Source {
+  id             String    @id @default(cuid())
+  organizationId String
+  name           String
+  sourceType     String
+  baseUrl        String?
+  permitted      Boolean   @default(false)
+  policyNotes    String?   @db.Text
+  tosUrl         String?
+  tosReviewedAt  DateTime?
+  reviewedBy     String?
+  rateLimit      Int       @default(1)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  evidence     SourceEvidence[]
+  crawlTargets CrawlTarget[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, permitted])
+}
+
+model DiscoveryProject {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  criteria       Json     @default("{}")
+  budget         Json     @default("{}")
+  status         String   @default("DRAFT")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  crawlTargets CrawlTarget[]
+
+  @@index([organizationId, createdAt(sort: Desc)])
+}
+
+model CrawlTarget {
+  id             String            @id @default(cuid())
+  organizationId String
+  projectId      String?
+  sourceId       String?
+  domainId       String?
+  url            String
+  urlHash        String
+  priority       Int               @default(100)
+  depth          Int               @default(0)
+  status         CrawlTargetStatus @default(QUEUED)
+  attempts       Int               @default(0)
+  lastError      String?
+  scheduledFor   DateTime          @default(now())
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      DiscoveryProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  source       Source?           @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  domain       Domain?           @relation(fields: [domainId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, urlHash])
+  @@index([organizationId, status, priority, scheduledFor])
+  @@index([status])
+}
+
+model FetchArtifact {
+  id            String   @id @default(cuid())
+  url           String   @db.Text
+  finalUrl      String   @db.Text
+  statusCode    Int
+  contentType   String?
+  bodySha256    String
+  storageKey    String
+  sizeBytes     Int
+  fetchedAt     DateTime @default(now())
+  robotsAllowed Boolean  @default(true)
+  renderMode    String   @default("HTTP")
+
+  evidence   SourceEvidence[]
+  runs       ExtractionRun[]
+  candidates ExtractionCandidate[]
+
+  @@index([bodySha256])
+  @@index([fetchedAt])
+}
+
+model ExtractionRun {
+  id               String    @id @default(cuid())
+  fetchArtifactId  String
+  extractorVersion String
+  modelVersion     String?
+  candidateCount   Int       @default(0)
+  status           RunStatus @default(RUNNING)
+  startedAt        DateTime  @default(now())
+  finishedAt       DateTime?
+
+  artifact   FetchArtifact @relation(fields: [fetchArtifactId], references: [id], onDelete: Cascade)
+  candidates ExtractionCandidate[]
+
+  @@unique([fetchArtifactId, extractorVersion])
+  @@index([startedAt])
+}
+
+model ExtractionCandidate {
+  id               String          @id @default(cuid())
+  organizationId   String
+  companyId        String?
+  runId            String?
+  fetchArtifactId  String
+  kind             CandidateKind
+  rawValue         String
+  normalizedValue  String
+  method           String
+  selector         String?
+  snippet          String?         @db.Text
+  confidence       Float           @default(0)
+  status           CandidateStatus @default(PENDING)
+  promotedEmailId  String?
+  promotedContactId String?
+  reviewedBy       String?
+  reviewedAt       DateTime?
+  rejectReason     String?
+  createdAt        DateTime        @default(now())
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  company      Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  run          ExtractionRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+  artifact     FetchArtifact @relation(fields: [fetchArtifactId], references: [id], onDelete: Cascade)
+  reviewer     User?         @relation("Reviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status, createdAt])
+  @@index([normalizedValue])
+  @@index([companyId])
+}
+
+// ---------------------------------------------------------------------------
+// Evidence & verification
+// ---------------------------------------------------------------------------
+
+model SourceEvidence {
+  id               String   @id @default(cuid())
+  organizationId   String
+  companyId        String?
+  contactId        String?
+  emailId          String?
+  domainId         String?
+  sourceId         String?
+  fetchArtifactId  String?
+  pageUrl          String   @db.Text
+  fieldName        String
+  extractedValue   String   @db.Text
+  extractorVersion String   @default("manual")
+  method           String   @default("manual")
+  snippet          String?  @db.Text
+  observedAt       DateTime @default(now())
+  contentHash      String?
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  company  Company?      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contact  Contact?      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  email    EmailAddress? @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  domain   Domain?       @relation(fields: [domainId], references: [id], onDelete: SetNull)
+  source   Source?       @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  artifact FetchArtifact? @relation(fields: [fetchArtifactId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, fieldName])
+  @@index([emailId, observedAt(sort: Desc)])
+  @@index([organizationId, observedAt(sort: Desc)])
+}
+
+model EmailVerification {
+  id        String   @id @default(cuid())
+  emailId   String
+  method    String
+  result    String
+  details   Json?
+  checkedAt DateTime @default(now())
+  expiresAt DateTime?
+  resolver  String?
+
+  email EmailAddress @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@index([emailId, checkedAt(sort: Desc)])
+}
+
+// ---------------------------------------------------------------------------
+// Compliance
+// ---------------------------------------------------------------------------
+
+model JurisdictionProfile {
+  id         String        @id @default(cuid())
+  code       String
+  version    String
+  status     ProfileStatus @default(DRAFT)
+  rules      Json
+  approvedBy String?
+  approvedAt DateTime?
+  notes      String?       @db.Text
+  createdAt  DateTime      @default(now())
+
+  @@unique([code, version])
+  @@index([code, status])
+}
+
+model ConsentRecord {
+  id        String    @id @default(cuid())
+  organizationId String
+  emailId   String
+  purpose   String
+  sourceUrl String?
+  evidence  Json      @default("{}")
+  obtainedAt DateTime
+  withdrawnAt DateTime?
+  createdAt DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email        EmailAddress @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@index([emailId, purpose])
+}
+
+model LawfulBasisRecord {
+  id              String    @id @default(cuid())
+  organizationId  String
+  emailId         String
+  basis           BasisType
+  assessment      Json      @default("{}")
+  jurisdictionCode String
+  campaignId      String?
+  reviewedBy      String?
+  createdAt       DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email        EmailAddress @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@index([emailId, jurisdictionCode])
+}
+
+model SuppressionEntry {
+  id             String            @id @default(cuid())
+  organizationId String?
+  emailNormalized String
+  domain         String?
+  reason         SuppressionReason
+  source         String?
+  createdAt      DateTime          @default(now())
+  liftedAt       DateTime?
+  liftedBy       String?
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, emailNormalized, reason])
+  @@index([emailNormalized])
+  @@index([domain])
+}
+
+model EligibilityDecision {
+  id             String            @id @default(cuid())
+  organizationId String
+  emailId        String
+  campaignId     String?
+  contextHash    String
+  ruleSetVersion String
+  outcome        EligibilityOutcome
+  reasons        Json              @default("[]")
+  requiredActions Json             @default("[]")
+  decidedAt      DateTime          @default(now())
+  expiresAt      DateTime
+  supersededBy   String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email        EmailAddress @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@index([emailId, campaignId, decidedAt(sort: Desc)])
+  @@index([organizationId, outcome])
+}
+
+model DataSubjectRequest {
+  id             String    @id @default(cuid())
+  organizationId String
+  type           String
+  subjectEmail   String
+  emailId        String?
+  status         String    @default("RECEIVED")
+  receivedAt     DateTime  @default(now())
+  dueAt          DateTime
+  completedAt    DateTime?
+  evidence       Json      @default("{}")
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email        EmailAddress? @relation(fields: [emailId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status, dueAt])
+}
+
+// ---------------------------------------------------------------------------
+// Campaigns & mail
+// ---------------------------------------------------------------------------
+
+model Campaign {
+  id               String         @id @default(cuid())
+  organizationId   String
+  name             String
+  subject          String
+  bodyHtml         String         @db.Text
+  bodyText         String         @db.Text
+  status           CampaignStatus @default(DRAFT)
+  segmentDefinition Json          @default("{}")
+  jurisdictionScope String[]      @default([])
+  lawfulBasis      BasisType?
+  approvedBy       String?
+  approvedAt       DateTime?
+  scheduledAt      DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  recipients   CampaignRecipient[]
+  sends        CampaignSend[]
+  events       EmailEvent[]
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([status, scheduledAt])
+}
+
+model CampaignRecipient {
+  id                     String          @id @default(cuid())
+  campaignId             String
+  emailId                String
+  emailSnapshot          String
+  status                 RecipientStatus @default(PENDING)
+  eligibilityDecisionId  String?
+  queuedAt               DateTime        @default(now())
+  sentAt                 DateTime?
+  error                  String?
+
+  campaign Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  email    EmailAddress @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  sends    CampaignSend[]
+
+  @@unique([campaignId, emailId])
+  @@index([campaignId, status])
+}
+
+model CampaignSend {
+  id                String   @id @default(cuid())
+  campaignId        String
+  recipientId       String
+  attempt           Int      @default(1)
+  provider          String   @default("smtp")
+  providerMessageId String?
+  smtpResponse      String?
+  sentAt            DateTime @default(now())
+
+  campaign  Campaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  recipient CampaignRecipient  @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, sentAt])
+}
+
+model EmailTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  subject        String
+  html           String   @db.Text
+  text           String   @db.Text
+  variables      Json     @default("[]")
+  version        Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name, version])
+}
+
+model EmailEvent {
+  id                String   @id @default(cuid())
+  organizationId    String?
+  emailId           String?
+  campaignId        String?
+  type              String
+  providerMessageId String?
+  occurredAt        DateTime @default(now())
+  metadata          Json     @default("{}")
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email        EmailAddress? @relation(fields: [emailId], references: [id], onDelete: SetNull)
+  campaign     Campaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([campaignId, occurredAt])
+  @@index([emailId, occurredAt])
+  @@index([organizationId, type, occurredAt])
+}
+
+model UnsubscribeToken {
+  id              String    @id @default(cuid())
+  token           String    @unique
+  emailNormalized String
+  campaignId      String?
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime
+  usedAt          DateTime?
+
+  @@index([emailNormalized])
+}
+
+// ---------------------------------------------------------------------------
+// Platform
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  organizationId String?
+  actorId    String?
+  action     String
+  entity     String
+  entityId   String?
+  metadata   Json     @default("{}")
+  ip         String?
+  requestId  String?
+  createdAt  DateTime @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  actor        User?         @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([createdAt])
+}
+
+model DomainEvent {
+  id            String   @id @default(cuid())
+  organizationId String?
+  type          String
+  aggregateType String
+  aggregateId   String
+  payload       Json     @default("{}")
+  occurredAt    DateTime @default(now())
+
+  @@index([aggregateType, aggregateId])
+  @@index([occurredAt])
+}
+
+model ImportJob {
+  id             String       @id @default(cuid())
+  organizationId String
+  filename       String
+  idempotencyKey String       @unique
+  status         ImportStatus @default(PENDING)
+  rowCount       Int          @default(0)
+  errorCount     Int          @default(0)
+  report         Json         @default("[]")
+  error          String?
+  createdAt      DateTime     @default(now())
+  finishedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt(sort: Desc)])
+}

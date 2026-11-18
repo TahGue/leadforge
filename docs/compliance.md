@@ -180,7 +180,7 @@ Sending in a country is disabled unless an `APPROVED` profile exists for the res
 | Objection to marketing | insert global suppression immediately, mark basis record | immediate |
 | Rectification | edit + evidence note | 30 days |
 
-`data_subject_requests` tracks status and due dates; the dashboard surfaces overdue requests. Suppression records survive erasure as a minimal hash to avoid re-contact.
+`data_subject_requests` records type, status and due date. In v1 the workflow is executed manually by an operator with full audit logging; automated discovery/export tooling is a v2 item. Suppression records survive erasure as a minimal hash to avoid re-contact.
 
 ---
 

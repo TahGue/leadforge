@@ -196,3 +196,7 @@ Crawler defaults live in `config/crawler.yaml`, versioned with code, overridable
 | GraphQL | REST + typed clients is simpler; add later if needed |
 | Service mesh | no |
 | Event sourcing of business entities | outbox + audit is enough; full ES is complexity tax |
+
+### 3.4 Implementation note (v1)
+
+The shipped v1 uses the database itself as the work queue (ADR-0019): `CrawlTarget` rows are claimed with `FOR UPDATE SKIP LOCKED` by the Python worker, and campaign recipients are claimed with an atomic status transition. The Redis Streams design above remains the scale-out path; Redis is present in the stack for cache and future fan-out but is not required for correctness.

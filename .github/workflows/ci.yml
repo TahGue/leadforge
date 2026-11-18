@@ -12,15 +12,36 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  DATABASE_URL: postgresql://leadforge:leadforge@127.0.0.1:5432/leadforge?schema=public
+  SESSION_SECRET: ci-session-secret-ci-session-secret-0000
+  UNSUBSCRIBE_SIGNING_KEY: ci-unsubscribe-key-ci-unsubscribe-key
+  MAIL_POSTAL_ADDRESS: LeadForge CI, Testgatan 1, 111 22 Stockholm
+  APP_URL: http://localhost:3000
+
 jobs:
   node:
-    name: Node — lint, typecheck, test
+    name: Node — typecheck, build, integration
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: leadforge
+          POSTGRES_PASSWORD: leadforge
+          POSTGRES_DB: leadforge
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U leadforge"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
+          version: 10.34.9
           run_install: false
 
       - uses: actions/setup-node@v4
@@ -29,20 +50,45 @@ jobs:
           cache: pnpm
 
       - name: Install
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm lint
+      - name: Generate Prisma client
+        run: pnpm --filter @leadforge/database generate
+
+      - name: Apply migrations
+        run: pnpm --filter @leadforge/database deploy
+
+      - name: Seed
+        run: pnpm --filter @leadforge/database seed
 
       - name: Typecheck
-        run: pnpm typecheck
+        run: pnpm -r --if-present typecheck
 
-      - name: Test
-        run: pnpm test
+      - name: Unit tests (compliance)
+        run: pnpm --filter @leadforge/compliance test
+
+      - name: API integration tests
+        run: pnpm --filter @leadforge/web test
+
+      - name: Build
+        run: pnpm --filter @leadforge/web build
 
   python:
     name: Python — lint, types, tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: leadforge
+          POSTGRES_PASSWORD: leadforge
+          POSTGRES_DB: leadforge
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U leadforge"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -61,27 +107,17 @@ jobs:
         run: uv run ruff check .
 
       - name: Mypy
-        run: |
-          if find services -name '*.py' -print -quit | grep -q .; then
-            uv run mypy services
-          else
-            echo "No Python sources yet — expected until Phase 0."
-          fi
+        run: uv run mypy services/leadforge
 
       - name: Pytest
-        run: |
-          # exit code 5 means "no tests collected" — expected until Phase 0/1 adds code
-          code=0
-          uv run pytest || code=$?
-          if [ "$code" -eq 5 ]; then
-            echo "No tests yet — expected until Phase 1."
-            exit 0
-          fi
-          exit "$code"
+        run: uv run pytest
 
   compose:
     name: Compose — config validity
     runs-on: ubuntu-latest
+    env:
+      POSTGRES_PASSWORD: ci-password
+      SESSION_SECRET: ci-session-secret-ci-session-secret-0000
     steps:
       - uses: actions/checkout@v4
       - name: Validate

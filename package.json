@@ -1,25 +1,38 @@
 {
   "name": "leadforge",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Self-hosted B2B lead discovery, intelligence and compliant outreach.",
-  "packageManager": "pnpm@12.16.1",
+  "packageManager": "pnpm@10.34.9",
   "engines": {
-    "node": ">=24"
+    "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm -r --if-present dev",
+    "dev": "pnpm --filter @leadforge/web dev",
     "build": "pnpm -r --if-present build",
+    "start": "pnpm --filter @leadforge/web start",
     "lint": "pnpm -r --if-present lint",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
+    "db:generate": "pnpm --filter @leadforge/database generate",
+    "db:migrate": "pnpm --filter @leadforge/database migrate",
+    "db:deploy": "pnpm --filter @leadforge/database deploy",
+    "db:seed": "pnpm --filter @leadforge/database seed",
+    "db:studio": "pnpm --filter @leadforge/database studio",
+    "worker": "pnpm --filter @leadforge/worker start",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
     "infra:logs": "docker compose logs -f --tail=100",
-    "infra:ps": "docker compose ps",
-    "db:generate": "pnpm --filter @leadforge/database generate",
-    "db:migrate": "pnpm --filter @leadforge/database migrate",
-    "db:seed": "pnpm --filter @leadforge/database seed",
-    "db:studio": "pnpm --filter @leadforge/database studio"
+    "infra:ps": "docker compose ps"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.16",
+    "@electric-sql/pglite-socket": "0.2.19",
+    "@prisma/internals": "6.19.3",
+    "@types/pg": "8.15.6",
+    "pg": "8.23.1",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "5.1.1"
   }
 }

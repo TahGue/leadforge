@@ -183,3 +183,23 @@ Critical path: Phase 0 â†’ 1 â†’ 4 â†’ 5 â†’ 7 â†’ 8. Phases 2/3/6 can overlap w
 An operator can: import domains â†’ run discovery â†’ crawl â†’ review extracted candidates â†’ promote companies/contacts â†’ verify emails â†’ see why each record is believed â†’ build a segment â†’ preview eligibility â†’ export a clean CSV or create a campaign draft that is provably blocked from sending until compliance and SMTP gates pass.
 
 That is a complete, defensible product even without a single outbound email.
+
+---
+
+## Implementation status (v1)
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| 0 · Spike | superseded | the probe CLI (`python -m leadforge.probe`) remains available |
+| 1 · Foundation | done | monorepo, compose, Prisma schema, auth, RBAC, API envelope |
+| 2 · CRM | done | companies, contacts, domains, evidence, CSV import, cursor lists |
+| 3 · Sources + discovery | done | policy gate, projects, target generation |
+| 4 · Crawler | done | SSRF guard, robots, redirects, cooldowns, artifacts, contact-page follow |
+| 5 · Extraction | done | deterministic extractors, false-positive filters, review queue |
+| 6 · Verification | done | syntax/DNS/MX, freshness, no mailbox probing |
+| 7 · Compliance | done | 4 jurisdiction profiles, default-deny engine, decisions, suppression, DSR model |
+| 8 · Campaigns | done | prepare, eligibility snapshot, approval, scheduling, test send |
+| 9 · SMTP | gated | Postfix/DKIM guidance + test-mode enforcement; live sending requires the deployment checklist |
+| 10 · Hardening | partial | health checks, backups, CI, integration tests; load test and pen-test still open |
+
+Remaining work is tracked in [`backlog.md`](./backlog.md); the highest-value next items are the golden-set corpus, OpenSearch threshold measurement, and the monitoring stack.

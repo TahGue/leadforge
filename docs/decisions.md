@@ -219,3 +219,15 @@ Format: **Status** Â· **Context** Â· **Decision** Â· **Consequences**.
 **Decision:** v1 runs one organization. Schema, RLS, and API are org-scoped from day one so multi-org is a feature flag, not a rewrite.
 
 **Consequences:** Some UI simplification (no org switcher). Migration to multi-org is additive.
+
+---
+
+## ADR-0019 — Postgres `SKIP LOCKED` queue for v1 (supersedes Redis Streams for commands)
+
+**Status:** Accepted (2026-11-18) · supersedes the transport choice in ADR-0003
+
+**Context:** The first deployable version needs one durable queue that both TypeScript and Python can use without a second broker. Redis was in the original design, but it adds a failure domain and a second consistency story for a single-operator deployment.
+
+**Decision:** Crawl targets are claimed directly from Postgres with `FOR UPDATE SKIP LOCKED`. Campaign recipients are claimed with an atomic status transition. Redis remains available for cache and future high-throughput fan-out, but is not on the correctness path.
+
+**Consequences:** One source of truth, trivially observable queue state (`status`, `attempts`, `scheduledFor`), and no cross-language serialization layer. Throughput is bounded by Postgres (adequate well past 1M contacts for this workload). Revisit Redis Streams if sustained queue depth exceeds what `SKIP LOCKED` can serve or if fan-out to many workers per stage becomes necessary.
