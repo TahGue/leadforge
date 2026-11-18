@@ -58,8 +58,12 @@ def server() -> str:
 def test_process_one_writes_candidates(server: str, monkeypatch: pytest.MonkeyPatch) -> None:
     try:
         conn = psycopg.connect(_dsn(), row_factory=dict_row)
+        conn.execute('SELECT 1 FROM "Organization" LIMIT 1')
+        conn.rollback()
     except psycopg.OperationalError:
         pytest.skip("database not reachable")
+    except psycopg.errors.UndefinedTable:
+        pytest.skip("database schema not applied")
 
     settings.database_url = _dsn()
     settings.crawler_delay_ms = 1

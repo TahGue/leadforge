@@ -64,7 +64,7 @@ Queue decision: [`ADR-0019`](docs/decisions.md); no Redis on the correctness pat
 cp .env.example .env
 # set POSTGRES_PASSWORD, SESSION_SECRET, UNSUBSCRIBE_SIGNING_KEY, MAIL_POSTAL_ADDRESS
 docker compose up -d --build
-docker compose exec web node node_modules/tsx/dist/cli.mjs packages/database/prisma/seed.mjs
+docker compose exec web node packages/database/prisma/seed.mjs
 ```
 
 Open http://localhost:3000 and sign in with the seeded owner (`admin@leadforge.local` / `ChangeMe123!` unless you set `SEED_ADMIN_*`). **Change the password immediately.**

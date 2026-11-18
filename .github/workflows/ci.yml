@@ -21,7 +21,7 @@ env:
 
 jobs:
   node:
-    name: Node — typecheck, build, integration
+    name: Node â€” typecheck, build, integration
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -56,7 +56,7 @@ jobs:
         run: pnpm --filter @leadforge/database generate
 
       - name: Apply migrations
-        run: pnpm --filter @leadforge/database deploy
+        run: pnpm --filter @leadforge/database run deploy
 
       - name: Seed
         run: pnpm --filter @leadforge/database seed
@@ -74,7 +74,7 @@ jobs:
         run: pnpm --filter @leadforge/web build
 
   python:
-    name: Python — lint, types, tests
+    name: Python â€” lint, types, tests
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -109,11 +109,18 @@ jobs:
       - name: Mypy
         run: uv run mypy services/leadforge
 
+      - name: Apply schema
+        env:
+          PGPASSWORD: leadforge
+        run: >-
+          psql -h 127.0.0.1 -U leadforge -d leadforge -v ON_ERROR_STOP=1
+          -f packages/database/prisma/migrations/20260101000000_init/migration.sql
+
       - name: Pytest
         run: uv run pytest
 
   compose:
-    name: Compose — config validity
+    name: Compose â€” config validity
     runs-on: ubuntu-latest
     env:
       POSTGRES_PASSWORD: ci-password

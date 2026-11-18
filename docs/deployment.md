@@ -72,7 +72,7 @@ docker compose ps
 Create the first organization and user (run once):
 
 ```bash
-docker compose exec web node node_modules/tsx/dist/cli.mjs packages/database/prisma/seed.mjs
+docker compose exec web node packages/database/prisma/seed.mjs
 ```
 
 The seed is idempotent. Set `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` in the environment **before** running it, or change the password immediately after first login.
