@@ -26,6 +26,9 @@ export const env = {
   redisUrl: process.env.REDIS_URL ?? "",
   postalAddress: process.env.MAIL_POSTAL_ADDRESS ?? "",
   isProduction: process.env.NODE_ENV === "production",
+  // Secure cookies require TLS. Tie this to the public URL, not NODE_ENV, so
+  // local production-mode runs and TLS-terminating proxies behave correctly.
+  cookieSecure: (process.env.APP_URL ?? "").startsWith("https://"),
   requireEnv: required,
 };
 

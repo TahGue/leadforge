@@ -13,7 +13,7 @@ export const POST = withAuth(async (_request: NextRequest, session) => {
   response.cookies.set(SESSION_COOKIE, "", {
     httpOnly: true,
     sameSite: "lax",
-    secure: env.isProduction,
+    secure: env.cookieSecure,
     path: "/",
     maxAge: 0,
   });

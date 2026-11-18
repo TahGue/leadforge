@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     response.cookies.set(SESSION_COOKIE, token, {
       httpOnly: true,
       sameSite: "lax",
-      secure: env.isProduction,
+      secure: env.cookieSecure,
       path: "/",
       expires: expiresAt,
     });
