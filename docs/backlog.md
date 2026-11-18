@@ -55,7 +55,7 @@ Status as of 2026-11-18. "Operator" items need a person's decision or data and c
 - [x] Ollama classification with evidence grounding
 - [x] Evidence spans (snippets, page URL, content hash)
 - [x] Confidence (explainable components) and freshness
-- [ ] Operator: benchmark models on a labelled set and pick `OLLAMA_CLASSIFICATION_MODEL`
+- [x] Model benchmark harness (`leadforge.ai_eval`) and default model (ADR-0025, 96% on the bundled set)
 
 ## Epic G — Data quality
 - [x] Domain normalization (registrable domain, private PSL)

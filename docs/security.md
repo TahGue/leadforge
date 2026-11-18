@@ -151,5 +151,5 @@ Status at the realignment release (2026-11-18):
 - [x] Policy-blocked jobs cannot be re-queued by non-admins (tested)
 - [x] Restore drill verified ([runbooks](./runbooks.md#restore-drill-log)); encrypting the offsite copy is the operator's job
 - [x] Same-origin check on cookie-authenticated mutations; secure cookies when `APP_URL` is https
-- [ ] Dependency audit before each release (`pnpm audit`, `uv pip list --outdated`)
+- [x] Dependency audit clean and enforced in CI (`pnpm audit --prod`, `pip-audit`); 2026-11-18 fixed zod (GHSA-mrhx-c7xc-m3w5, upgraded to 4.6.7) and deepmerge-ts (GHSA-ggr8-5vv4-36mx, override 8.0.2)
 - [ ] Open-relay and mail tests: Phase 9 only

@@ -291,3 +291,15 @@ Format: **Status** · **Context** · **Decision** · **Consequences**.
 **Decision:** The repo ships continents, all ISO 3166-1 countries, and a curated Nordic set of regions and cities in `data/geography/seed/`. `scripts/import-geonames.mjs` imports `countryInfo.txt`, `admin1CodesASCII.txt` and `citiesNNNN.txt` that the operator downloads. Each import is recorded in `geo_import_batches` with its licence and attribution.
 
 **Consequences:** A fresh install works offline for the initial scope. Wider coverage is one documented command away.
+
+---
+
+## ADR-0025 — Default classification model: qwen3.8:27b
+
+**Status:** Accepted (2026-11-18)
+
+**Context:** Spec §12 requires benchmarking local models on labelled data before choosing a default. The only model available on the reference workstation was `qwen3.8:27b` (Q4_K_M).
+
+**Decision:** Default `OLLAMA_CLASSIFICATION_MODEL=qwen3.8:27b`. Benchmark: 96% accuracy, 1 false store in 24, correct handling of a prompt-injection item, 18.5 s p50 ([performance](./performance.md#local-ai-classification)). Classification stays opt-in (`OLLAMA_ENABLED=false` by default).
+
+**Consequences:** Needs about 18 GB of GPU or system memory. Operators on smaller hosts must benchmark a smaller model with `leadforge.ai_eval` and override the variable. Revisit when the labelled set includes real companies.

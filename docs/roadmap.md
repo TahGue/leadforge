@@ -10,7 +10,7 @@ The roadmap is spec §27 ([MEGA-PLAN](./MEGA-PLAN.md)). How the existing code wa
 | 3 — Discovery project builder | Done |
 | 4 — Company discovery and adapters | Done (choosing and approving a real dataset is an operator step) |
 | 5 — Website crawling and extraction | Done |
-| 6 — Local AI and data quality | Done (model benchmarking on real labels is an operator step) |
+| 6 — Local AI and data quality | Done (default model benchmarked, ADR-0025) |
 | 7 — Verification, search, and exports | Done |
 | 8 — Hardening and release | Done: security tests, load test, restore drill, monitoring, runbooks |
 | 9 — Campaign capability | Frozen until legal review (ADR-0020) |

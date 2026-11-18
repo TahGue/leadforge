@@ -62,7 +62,7 @@ export const sourceCreate = z.object({
   licenceName: z.string().max(200).optional(),
   licenceUrl: z.string().url().optional(),
   attribution: z.string().max(500).optional(),
-  config: z.record(z.unknown()).default({}),
+  config: z.record(z.string(), z.unknown()).default({}),
 });
 
 /** A policy review. Approval requires the reviewer to state the permissions explicitly. */
@@ -82,7 +82,7 @@ export const sourcePolicyUpdate = z.object({
   rateLimitJson: z
     .object({ requestsPerMinute: z.number().int().min(1).max(600).optional() })
     .optional(),
-  config: z.record(z.unknown()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
 });
 
 const filterMode = z.enum(["INCLUDE", "EXCLUDE"]);
@@ -117,13 +117,13 @@ export const discoveryLocationInput = z
   .superRefine((loc, ctx) => {
     const field = LOCATION_REQUIRES[loc.level];
     if (loc[field] === undefined) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${loc.level} location requires ${field}` });
+      ctx.addIssue({ code: "custom", message: `${loc.level} location requires ${field}` });
     }
     if (loc.level === "POSTAL" && !loc.countryIso2) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "POSTAL location requires countryIso2" });
+      ctx.addIssue({ code: "custom", message: "POSTAL location requires countryIso2" });
     }
     if (loc.level === "POINT" && (loc.longitude === undefined || loc.radiusKm === undefined)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "POINT location requires longitude and radiusKm" });
+      ctx.addIssue({ code: "custom", message: "POINT location requires longitude and radiusKm" });
     }
   });
 
@@ -145,7 +145,7 @@ export const discoveryProjectSettings = z.object({
       socialProfilesRequired: z.boolean().default(false),
       descriptionRequired: z.boolean().default(false),
     })
-    .default({}),
+    .prefault({}),
   contacts: z
     .object({
       categories: z.array(z.enum(CONTACT_CATEGORIES)).default(["GENERAL", "SALES"]),
@@ -158,7 +158,7 @@ export const discoveryProjectSettings = z.object({
       requireMxValid: z.boolean().default(false),
       minConfidence: z.number().min(0).max(1).default(0.5),
     })
-    .default({}),
+    .prefault({}),
   website: z
     .object({
       presence: z.enum(["ANY", "EXISTS", "ABSENT"]).default("ANY"),
@@ -167,14 +167,14 @@ export const discoveryProjectSettings = z.object({
       requireCareersPage: z.boolean().default(false),
       requireShop: z.boolean().default(false),
     })
-    .default({}),
+    .prefault({}),
   language: z
     .object({
       websiteLanguages: z.array(z.string().min(2).max(8)).default([]),
       allowUnknown: z.boolean().default(true),
       minConfidence: z.number().min(0).max(1).default(0),
     })
-    .default({}),
+    .prefault({}),
   quality: z
     .object({
       minSourceObservations: z.number().int().min(0).max(10).default(1),
@@ -183,7 +183,7 @@ export const discoveryProjectSettings = z.object({
       requireReviewed: z.boolean().default(false),
       excludeDuplicates: z.boolean().default(true),
     })
-    .default({}),
+    .prefault({}),
   exclusions: z
     .object({
       domains: z.array(z.string().max(253)).default([]),
@@ -193,7 +193,7 @@ export const discoveryProjectSettings = z.object({
       excludeSuppressed: z.boolean().default(true),
       sourceDomains: z.array(z.string().max(253)).default([]),
     })
-    .default({}),
+    .prefault({}),
   crawl: z
     .object({
       requestsPerDomainPerMinute: z.number().int().min(1).max(60).default(6),
@@ -209,7 +209,7 @@ export const discoveryProjectSettings = z.object({
       usePlaywright: z.boolean().default(false),
       stopAfterBlocked: z.number().int().min(1).max(100).default(5),
     })
-    .default({}),
+    .prefault({}),
 });
 
 export const discoveryProjectInput = z.object({
@@ -248,12 +248,12 @@ export const discoveryProjectInput = z.object({
       z.object({
         sourceId: z.string().min(1),
         enabled: z.boolean().default(true),
-        configuration: z.record(z.unknown()).default({}),
+        configuration: z.record(z.string(), z.unknown()).default({}),
       }),
     )
     .max(20)
     .default([]),
-  settings: discoveryProjectSettings.default({}),
+  settings: discoveryProjectSettings.prefault({}),
 });
 
 /** Back-compat alias for the v0 name. */
@@ -302,7 +302,7 @@ export const bulkTag = z.object({
 export const savedSegmentCreate = z.object({
   name: z.string().min(1).max(120),
   entity: z.enum(["COMPANIES", "CONTACTS"]),
-  filters: z.record(z.unknown()).default({}),
+  filters: z.record(z.string(), z.unknown()).default({}),
 });
 
 export const duplicateDecision = z.object({

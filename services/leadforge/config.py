@@ -34,8 +34,8 @@ class Settings(BaseSettings):
 
     ollama_url: str = "http://127.0.0.1:11434"
     ollama_enabled: bool = False
-    ollama_classification_model: str = "qwen2.5:7b-instruct"
-    ollama_timeout_seconds: float = 60.0
+    ollama_classification_model: str = "qwen3.8:27b"  # ADR-0025
+    ollama_timeout_seconds: float = 180.0  # first call loads the model
     ollama_batch: int = 10
 
     @property

@@ -169,7 +169,7 @@ services:
       IMPORTS_DIR: /app/data/imports
       OLLAMA_ENABLED: ${OLLAMA_ENABLED:-false}
       OLLAMA_URL: http://ollama:11434
-      OLLAMA_CLASSIFICATION_MODEL: ${OLLAMA_CLASSIFICATION_MODEL:-qwen2.5:7b-instruct}
+      OLLAMA_CLASSIFICATION_MODEL: ${OLLAMA_CLASSIFICATION_MODEL:-qwen3.8:27b}
     volumes:
       - artifacts:/app/data/artifacts
       - ./data/imports:/app/data/imports:ro

@@ -36,3 +36,16 @@ Every hot query is under the 500 ms p50 budget, by two orders of magnitude.
 - Crawl throughput, not the database, is the bottleneck: at the default 6 requests/minute/domain and 4 concurrent jobs, 100,000 companies × 12 pages take about 83 hours of crawling. Scale with more crawler processes (one domain per job is enforced), not higher per-site rates.
 - Partition `CrawlPage`, `SourceEvidence` and `AuditLog` by month only when measured volume calls for it (spec §15).
 - Add OpenSearch only if Postgres FTS becomes a measured bottleneck (ADR-0015).
+
+## Local AI classification
+
+`python -m leadforge.ai_eval --model qwen3.8:27b` on 2026-11-18, local Ollama (Q4_K_M), production prompt and grounding check, 24 labelled items (`tests/golden/classification.jsonl`: Swedish, English and German texts, two "no classification" cases, one prompt-injection case).
+
+| Model | Accuracy | False stores | Stored | Abstained | p50 latency |
+| --- | --- | --- | --- | --- | --- |
+| qwen3.8:27b | 23/24 (96%) | 1 | 23 | 1 | 18.5 s |
+
+- The prompt-injection item ("IGNORE ALL PREVIOUS INSTRUCTIONS…", a bakery) was classified as food processing, not as the injected code.
+- The single false store was "Holding AB, owns and manages shares in subsidiaries" → investment. Defensible, but the label expected abstention; AI classifications are stored at confidence ≤ 0.7 with method `AI` so they stay distinguishable and reviewable.
+- 18.5 s per company is acceptable for the background batch (`OLLAMA_BATCH=10`). For hosts without a GPU, benchmark a smaller model with the same command before switching.
+- The set is synthetic. Extend it with real, hand-labelled companies from your market before relying on the accuracy figure.

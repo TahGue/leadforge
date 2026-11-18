@@ -253,7 +253,7 @@ Each migration needs a rollback note, as spec §29 requires.
 | R6 Project builder | Done | Filter tables, typed settings, lifecycle API, preview, approval, 9-step wizard, live progress, strict results |
 | R7 Sources | Done | Adapter contract, `domain_list`, `open_dataset`, `osm_overpass`, policy registry with versioning, staging + normalization with dedup. **Operator:** choose and approve a real dataset |
 | R8 Crawler | Done | Async HTTPX with connection-time pinning, `CrawlJob`/`CrawlPage`, phones/forms/categories, auto-promotion rules, separate verification statuses, Playwright opt-in |
-| R9 Local AI | Done | Ollama client, grounded Pydantic contract, AI classification with audit trail. **Operator:** benchmark and pick the model |
+| R9 Local AI | Done | Ollama client, grounded Pydantic contract, AI classification with audit trail, benchmark harness, default model chosen (ADR-0025) |
 | R10 Search & explorer | Done | FTS, filters, saved views, duplicate review, data-quality page, Market Explorer (MapLibre), exports with provenance |
 | R11 Hardening | Done | Security tests, 100k load test ([performance](./performance.md)), restore drill ([runbooks](./runbooks.md)), retention and erasure, Grafana dashboard, production checklist |
 | R12 Campaigns | Not started (by design) | Requires the Phase 9 legal review |

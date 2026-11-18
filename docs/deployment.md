@@ -67,7 +67,13 @@ Terminate TLS in front of `127.0.0.1:3000` (Caddy, nginx or Traefik). Forward `X
 3. **OpenStreetMap:** prefer a self-hosted Overpass instance (`config.endpoint`). Public instances are shared and rate limited.
 4. **Crawler limits:** `CRAWLER_GLOBAL_CONCURRENCY` (jobs in parallel; one per domain), `CRAWLER_DELAY_MS`, `CRAWLER_MAX_RESPONSE_MB`. Projects set their own rate, page and depth budgets.
 5. **Browser rendering:** build the crawler with `CRAWLER_INSTALL_BROWSER=true` and set `CRAWLER_PLAYWRIGHT_ENABLED=true`. Projects must also opt in.
-6. **Local AI:** `docker compose --profile ai up -d`, then `docker compose exec ollama ollama pull qwen2.5:7b-instruct` (or another model you benchmarked), then set `OLLAMA_ENABLED=true` and restart the crawler.
+6. **Local AI:** `docker compose --profile ai up -d`, pull candidate models (`docker compose exec ollama ollama pull <model>`), and benchmark them with the production prompt and grounding check:
+
+   ```bash
+   python -m leadforge.ai_eval --model <model-a> --model <model-b> --out reports/ai-eval.md
+   ```
+
+   Pick the model with the fewest **false stores** (wrong codes that would be saved), then accuracy and latency. Set `OLLAMA_CLASSIFICATION_MODEL`, `OLLAMA_ENABLED=true`, and restart the crawler. The bundled set (`tests/golden/classification.jsonl`) is synthetic; add real, hand-labelled companies from your market for a decision you can rely on. Results so far are in [performance](./performance.md#local-ai-classification).
 
 ## 7. Monitoring
 

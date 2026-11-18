@@ -17,7 +17,7 @@ Decisions the plan cannot make alone. Each has a recommendation so work can proc
 | Q11 | What is the acceptable review workload? | Determines auto-promotion thresholds | **Resolved 2026-11-18:** only deterministic (mailto/tel/JSON-LD), on-domain, role-based contacts and contact forms are auto-promoted (`CRAWLER_AUTO_PROMOTE_CONFIDENCE`); named people always go to review | — |
 | Q12 | Should free-provider emails (gmail.com etc.) be stored at all? | They are personal data with weak B2B relevance | **Resolved 2026-11-18:** kept as review candidates only, never auto-promoted; projects exclude them by default | — |
 | Q13 | Which map tile source? | Public OSM tiles are not for application traffic (spec 21) | Self-host (e.g. Protomaps PMTiles) or a licensed provider; set `NEXT_PUBLIC_MAP_STYLE_URL` | Explorer basemap |
-| Q14 | Which local model for classification? | Accuracy, speed and hardware | Benchmark 2–3 instruct models on the labelled set with `leadforge.ai`; record in an ADR | AI accuracy |
+| Q14 | Which local model for classification? | Accuracy, speed and hardware | **Resolved 2026-11-18 (ADR-0025):** `qwen3.8:27b`, 96% on the bundled set; re-benchmark smaller models with `leadforge.ai_eval` on smaller hosts | — |
 | Q15 | Which markets need full GeoNames coverage? | City-level targeting outside the seed countries | Import `cities1000` for the countries you sell in (`scripts/import-geonames.mjs`) | City scopes outside SE/NO/DK/FI/DE/GB |
 
 ---
