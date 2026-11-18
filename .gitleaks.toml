@@ -1,0 +1,22 @@
+# Kept for contributors who run gitleaks locally.
+# CI uses scripts/secret-scan.mjs because gitleaks-action requires a licence.
+title = "LeadForge"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures and documented placeholders"
+paths = [
+  '''.env\.example''',
+  '''apps/.*/vitest\.setup\.ts''',
+  '''\.github/workflows/ci\.yml''',
+  '''docs/.*''',
+  '''infrastructure/.*/README\.md''',
+]
+regexes = [
+  '''change-me''',
+  '''ci-.*-secret''',
+  '''test-.*-secret''',
+  '''dev-only''',
+]
