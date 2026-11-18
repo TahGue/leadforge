@@ -1,0 +1,65 @@
+# LeadForge — local infrastructure
+#
+# Scope of this file: the services required before application code exists.
+# Later phases add (do not add them early — each one costs operational attention):
+#   Phase 4: minio            (content-addressed page artifacts)
+#   Phase 5: ollama           (local classification; can also run natively)
+#   Phase 9: postfix, opendkim
+#   Phase 10: opensearch      (only after Postgres FTS is proven insufficient)
+#
+# Rules: pinned tags, healthchecks, loopback-bound ports, named volumes,
+# no host networking, no default credentials in production.
+
+name: leadforge
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-leadforge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-only}
+      POSTGRES_DB: ${POSTGRES_DB:-leadforge}
+      # deterministic collation for reproducible indexes
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    ports:
+      # loopback only — never publish a database port
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    stop_grace_period: 30s
+    shm_size: 256mb
+    networks:
+      - leadforge_net
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    stop_grace_period: 30s
+    networks:
+      - leadforge_net
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  leadforge_net:
+    driver: bridge

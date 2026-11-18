@@ -1,0 +1,25 @@
+{
+  "name": "leadforge",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Self-hosted B2B lead discovery, intelligence and compliant outreach.",
+  "packageManager": "pnpm@12.16.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "pnpm -r --if-present dev",
+    "build": "pnpm -r --if-present build",
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "infra:logs": "docker compose logs -f --tail=100",
+    "infra:ps": "docker compose ps",
+    "db:generate": "pnpm --filter @leadforge/database generate",
+    "db:migrate": "pnpm --filter @leadforge/database migrate",
+    "db:seed": "pnpm --filter @leadforge/database seed",
+    "db:studio": "pnpm --filter @leadforge/database studio"
+  }
+}

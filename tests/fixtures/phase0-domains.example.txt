@@ -1,0 +1,12 @@
+# Phase 0 seed list — template
+#
+# Copy to phase0-domains.txt (gitignored) and fill with 50 real companies.
+# Keep the mix from docs/phase-0-spike.md §2: local services, SaaS, agencies,
+# manufacturing, professional services, e-commerce.
+#
+# Do not include: login-protected sites, sites whose robots.txt disallows
+# crawling, or jurisdictions you are not prepared to process.
+#
+# Format: domain[,country_code,archetype]
+example.com,SE,local-business
+example.org,DE,manufacturer
