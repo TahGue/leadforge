@@ -3,17 +3,17 @@
 ## Policy
 
 - Nightly logical dump (`scripts/backup.sh`) with a manifest.
-- Weekly full base backup + WAL archiving when production data matters (Phase 10).
+- Weekly full base backup + WAL archiving when production data matters.
 - Offsite copy, client-side encrypted, separate key from the database host.
 - Retention: 14 daily, 8 weekly, 12 monthly (configurable).
 
 ## Restore procedure
 
-1. Provision a clean Postgres of the same major version.
-2. `pg_restore -U <user> -d <db> --clean --if-exists <dump>`.
-3. Apply Prisma migrations + `sql/` policies/partitions if the dump predates them.
-4. Verify row counts against the manifest and run `scripts/health-check.sh`.
-5. Record the drill outcome in `docs/quality-gates.md` (G10).
+- **Drill:** `scripts/restore.sh <dump>` restores into a scratch database, compares row counts with live, and drops it.
+- **Real restore:** stop web, worker and crawler, then `scripts/restore.sh <dump> --replace` (asks you to type the database name).
+- The image must be `postgis/postgis` of the same major version (the dump contains PostGIS types).
+- After restoring, start the stack: `migrate` applies any newer migrations. Then check `/api/v1/health`.
+- Log every drill in [`docs/runbooks.md`](../../docs/runbooks.md#restore-drill-log).
 
 ## Rule
 

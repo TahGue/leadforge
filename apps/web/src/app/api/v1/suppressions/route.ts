@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@leadforge/database";
-import { ApiError, normalizeEmail, parseBody, suppressionCreate } from "@leadforge/shared";
+import { ApiError, domainSuppressionKey, normalizeEmail, parseBody, registrableDomain, suppressionCreate } from "@leadforge/shared";
 import { json, withAuth } from "@/lib/api";
 import { audit } from "@/lib/audit";
 
@@ -22,21 +22,32 @@ export const GET = withAuth(async (request: NextRequest, session) => {
 
 export const POST = withAuth(async (request: NextRequest, session) => {
   const input = await parseBody(request, suppressionCreate);
-  const normalized = normalizeEmail(input.email);
-  if (!normalized.valid) throw new ApiError(400, "VALIDATION_ERROR", "Invalid email address");
+  let key: string;
+  let domain: string;
+  if (input.email) {
+    const normalized = normalizeEmail(input.email);
+    if (!normalized.valid) throw new ApiError(400, "VALIDATION_ERROR", "Invalid email address");
+    key = normalized.normalized;
+    domain = normalized.domain;
+  } else {
+    const registrable = registrableDomain(input.domain!);
+    if (!registrable) throw new ApiError(400, "VALIDATION_ERROR", "Invalid domain");
+    key = domainSuppressionKey(registrable);
+    domain = registrable;
+  }
 
   const entry = await prisma.suppressionEntry.upsert({
     where: {
       organizationId_emailNormalized_reason: {
         organizationId: session.organization.id,
-        emailNormalized: normalized.normalized,
+        emailNormalized: key,
         reason: input.reason,
       },
     },
     create: {
       organizationId: session.organization.id,
-      emailNormalized: normalized.normalized,
-      domain: input.domain ?? normalized.domain,
+      emailNormalized: key,
+      domain,
       reason: input.reason,
       source: input.source ?? `manual:${session.user.email}`,
     },
@@ -44,7 +55,7 @@ export const POST = withAuth(async (request: NextRequest, session) => {
   });
 
   await prisma.emailAddress.updateMany({
-    where: { normalized: normalized.normalized },
+    where: input.email ? { normalized: key } : { domain },
     data: { status: "SUPPRESSED" },
   });
 
@@ -54,7 +65,7 @@ export const POST = withAuth(async (request: NextRequest, session) => {
     action: "suppression.create",
     entity: "SuppressionEntry",
     entityId: entry.id,
-    metadata: { reason: input.reason },
+    metadata: { reason: input.reason, scope: input.email ? "address" : "domain" },
   });
 
   return json({ data: entry }, 201);

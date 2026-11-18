@@ -1,226 +1,146 @@
-"""Crawl + extract worker.
+"""LeadForge Python worker entry point.
 
-Claims one QUEUED CrawlTarget at a time directly from Postgres, fetches it
-politely, extracts candidates, and writes them to the review queue. It never
-promotes a record and never decides eligibility.
+    python -m leadforge.worker                 # all roles
+    python -m leadforge.worker --role crawl    # one role: crawl | discovery | classify | retention
+    python -m leadforge.worker --once          # one pass of each role, then exit
+
+Roles claim work from Postgres (ADR-0021), so run as many processes as needed.
+Crawl concurrency is CRAWLER_GLOBAL_CONCURRENCY jobs at a time; a domain is
+never crawled by two jobs at once (enforced in the claim query).
 """
 
 from __future__ import annotations
 
-import hashlib
+import argparse
+import asyncio
+import json
+import logging
+import signal
+import sys
 import time
-from dataclasses import dataclass
-from urllib.parse import urljoin, urlsplit
+from typing import Any
 
-import httpx
-
+from . import ai, crawler, discovery, retention
 from .config import settings
-from .extract import extract_page
-from .robots import RobotsCache
-from .safety import UnsafeUrlError, validate_url
-from .store import (
-    DbConnection,
-    claim_target,
-    company_for_domain,
-    connect,
-    cooldown_domain,
-    enqueue_contact_pages,
-    finish_run,
-    insert_candidate,
-    mark_target,
-    save_artifact,
-    touch_domain,
-    upsert_run,
-)
-
-EXTRACTOR_VERSION = "lf-extract-1"
-BLOCKING_STATUSES = {401, 403, 429, 451}
+from .net import make_client
+from .robots import AsyncRobotsCache
+from .store import connect
 
 
-@dataclass
-class FetchResult:
-    status_code: int
-    final_url: str
-    content_type: str | None
-    body: bytes
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        return json.dumps(
+            {
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(record.created)),
+                "level": record.levelname.lower(),
+                "service": "crawler",
+                "logger": record.name,
+                "message": record.getMessage(),
+            }
+        )
 
 
-def _client() -> httpx.Client:
-    return httpx.Client(
-        headers={
-            "User-Agent": settings.crawler_user_agent,
-            "Accept": "text/html,application/xhtml+xml",
-            "Accept-Language": "en,sv;q=0.8,de;q=0.7",
-        },
-        timeout=httpx.Timeout(settings.crawler_timeout_seconds),
-        follow_redirects=False,
-        trust_env=False,
-    )
+def configure_logging() -> None:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(JsonFormatter())
+    logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
 
 
-def fetch(client: httpx.Client, url: str, robots: RobotsCache) -> FetchResult:
-    current = url
-    for _ in range(settings.crawler_max_redirects):
-        validate_url(current)
-        if not robots.allowed(current):
-            raise PermissionError("robots_disallow")
-
-        with client.stream("GET", current) as response:
-            if response.status_code in {301, 302, 303, 307, 308}:
-                location = response.headers.get("location")
-                if not location:
-                    raise ValueError("redirect without location")
-                current = urljoin(current, location)
-                continue
-
-            if response.status_code != 200:
-                return FetchResult(
-                    status_code=response.status_code,
-                    final_url=str(response.url),
-                    content_type=response.headers.get("content-type"),
-                    body=b"",
-                )
-
-            content_type = response.headers.get("content-type", "")
-            if "html" not in content_type.lower():
-                return FetchResult(response.status_code, str(response.url), content_type, b"")
-
-            chunks: list[bytes] = []
-            size = 0
-            for chunk in response.iter_bytes():
-                size += len(chunk)
-                if size > settings.crawler_max_bytes:
-                    raise ValueError("response_too_large")
-                chunks.append(chunk)
-            return FetchResult(response.status_code, str(response.url), content_type, b"".join(chunks))
-
-    raise ValueError("too_many_redirects")
+log = logging.getLogger("leadforge.worker")
+stop = asyncio.Event()
 
 
-def process_one(conn: DbConnection, client: httpx.Client, robots: RobotsCache) -> bool:
-    target = claim_target(conn)
-    if target is None:
-        return False
+async def crawl_loop(slot: int, once: bool) -> None:
+    conn = await connect()
+    async with make_client() as client:
+        robots = AsyncRobotsCache(client)
+        try:
+            while not stop.is_set():
+                worked = await crawler.process_one(conn, client, robots)
+                if once:
+                    return
+                if not worked:
+                    await asyncio.wait([asyncio.ensure_future(stop.wait())], timeout=2 + slot)
+        finally:
+            await conn.close()
 
+
+async def discovery_loop(once: bool) -> None:
+    conn = await connect()
     try:
-        cooldown = conn.execute(
-            'SELECT "cooldownUntil" FROM "Domain" WHERE id = %s', (target.domain_id,)
-        ).fetchone()
-        if cooldown and cooldown["cooldownUntil"]:
-            mark_target(conn, target.id, "BLOCKED", error="domain_cooldown")
-            conn.commit()
-            return True
+        while not stop.is_set():
+            worked = await discovery.process_one(conn)
+            if once:
+                return
+            if not worked:
+                await asyncio.wait([asyncio.ensure_future(stop.wait())], timeout=settings.discovery_poll_seconds)
+    finally:
+        await conn.close()
 
-        result = fetch(client, target.url, robots)
 
-        if result.status_code in BLOCKING_STATUSES:
-            mark_target(conn, target.id, "BLOCKED", error=f"http_{result.status_code}")
-            cooldown_domain(conn, target.domain_id)
-            conn.commit()
-            return True
+async def classify_loop(once: bool) -> None:
+    if not settings.ollama_enabled:
+        log.info("ollama disabled (OLLAMA_ENABLED=false); classification role idle")
+        return
+    conn = await connect()
+    client = ai.OllamaClient()
+    try:
+        while not stop.is_set():
+            stats = await ai.classify_batch(conn, client)
+            if any(stats.values()):
+                log.info("classification %s", stats)
+            if once:
+                return
+            await asyncio.wait([asyncio.ensure_future(stop.wait())], timeout=30 if not any(stats.values()) else 1)
+    finally:
+        await client.close()
+        await conn.close()
 
-        if result.status_code != 200 or not result.body:
-            retry = target.attempts < 3
-            mark_target(
-                conn,
-                target.id,
-                "QUEUED" if retry else "FAILED",
-                error=f"http_{result.status_code}",
-                retry=retry,
-            )
-            conn.commit()
-            return True
 
-        artifact_id, digest = save_artifact(
-            conn,
-            url=target.url,
-            final_url=result.final_url,
-            status_code=result.status_code,
-            content_type=result.content_type,
-            body=result.body,
-        )
+async def retention_loop(once: bool) -> None:
+    conn = await connect()
+    try:
+        while not stop.is_set():
+            purged = await retention.purge_artifacts(conn)
+            if purged:
+                log.info("artifact retention purged=%s", purged)
+            if once:
+                return
+            await asyncio.wait([asyncio.ensure_future(stop.wait())], timeout=3600 if not purged else 5)
+    finally:
+        await conn.close()
 
-        html = result.body.decode("utf-8", errors="replace")
-        page = extract_page(html, result.final_url)
-        company = company_for_domain(conn, target.domain_id)
 
-        run_id = upsert_run(conn, artifact_id, EXTRACTOR_VERSION)
-        for candidate in page.emails:
-            insert_candidate(
-                conn,
-                organization_id=target.organization_id,
-                artifact_id=artifact_id,
-                run_id=run_id,
-                company_id=company["id"] if company else None,
-                candidate=candidate,
-            )
-        finish_run(conn, run_id, len(page.emails))
-
-        if page.contact_links and company:
-            enqueue_contact_pages(
-                conn,
-                organization_id=target.organization_id,
-                project_id=target.project_id,
-                domain_id=target.domain_id,
-                links=page.contact_links,
-                depth=target.depth,
-                max_pages=settings.crawler_max_pages_per_company,
-            )
-
-        touch_domain(
-            conn,
-            target.domain_id,
-            hashlib.sha256((robots.raw_for(result.final_url) or "").encode()).hexdigest(),
-        )
-        mark_target(conn, target.id, "DONE")
-        conn.commit()
-
-        host = urlsplit(result.final_url).hostname
-        print(
-            f"crawl {host} status={result.status_code} bytes={len(result.body)} "
-            f"candidates={len(page.emails)} sha={digest[:10]}"
-        )
-        return True
-
-    except PermissionError as error:
-        mark_target(conn, target.id, "BLOCKED", error=str(error))
-        conn.commit()
-        return True
-    except UnsafeUrlError as error:
-        mark_target(conn, target.id, "BLOCKED", error=f"unsafe_url: {error}")
-        conn.commit()
-        return True
-    except (httpx.HTTPError, ValueError) as error:
-        retry = target.attempts < 3
-        mark_target(
-            conn,
-            target.id,
-            "QUEUED" if retry else "FAILED",
-            error=str(error)[:500],
-            retry=retry,
-        )
-        conn.commit()
-        return True
+async def main(role: str, once: bool) -> None:
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except NotImplementedError:  # Windows
+            signal.signal(sig, lambda *_: stop.set())
+    log.info("worker start role=%s concurrency=%s ua=%s", role, settings.crawler_global_concurrency, settings.crawler_user_agent)
+    tasks: list[Any] = []
+    if role in {"all", "crawl"}:
+        tasks += [crawl_loop(slot, once) for slot in range(max(1, settings.crawler_global_concurrency))]
+    if role in {"all", "discovery"}:
+        tasks.append(discovery_loop(once))
+    if role in {"all", "classify"}:
+        tasks.append(classify_loop(once))
+    if role in {"all", "retention"}:
+        tasks.append(retention_loop(once))
+    await asyncio.gather(*tasks)
+    log.info("worker stopped")
 
 
 def run() -> None:
-    conn = connect()
-    robots = RobotsCache(_client())
-    idle_sleep = max(1.0, settings.crawler_delay_ms / 1000)
-
-    print(f"leadforge worker started (extractor={EXTRACTOR_VERSION})")
-    try:
-        with _client() as client:
-            while True:
-                worked = process_one(conn, client, robots)
-                if not worked:
-                    time.sleep(idle_sleep * 2)
-                else:
-                    time.sleep(settings.crawler_delay_ms / 1000)
-    except KeyboardInterrupt:
-        print("worker stopping")
-    finally:
-        conn.close()
+    parser = argparse.ArgumentParser(description="LeadForge data engine worker")
+    parser.add_argument("--role", default="all", choices=["all", "crawl", "discovery", "classify", "retention"])
+    parser.add_argument("--once", action="store_true")
+    args = parser.parse_args()
+    configure_logging()
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())  # psycopg async needs a selector loop
+    asyncio.run(main(args.role, args.once))
 
 
 if __name__ == "__main__":

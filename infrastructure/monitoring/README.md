@@ -1,20 +1,24 @@
 # Monitoring
 
-Metrics, logs, dashboards, alerts, and runbooks.
+`docker compose --profile monitoring up -d` starts Prometheus (scraping `/api/v1/metrics` with `METRICS_TOKEN`) and Grafana on 127.0.0.1:3001 with the **LeadForge pipeline** dashboard (`grafana/dashboards/leadforge.json`).
 
-## Stack (Phase 10)
+Before starting:
 
-Prometheus + Grafana + Loki, all local. Optional export to an external collector.
+```bash
+printf '%s' "$METRICS_TOKEN" > infrastructure/monitoring/metrics-token   # git-ignored
+openssl rand -base64 24 > infrastructure/monitoring/grafana-admin-password   # git-ignored; Grafana user "admin"
+```
 
-## What must be alerted
+## Metrics
 
-- Crawl queue lag > 15 min, DLQ growth, crawl success rate < 85%.
-- Review backlog age > 7 days.
-- Verification job failures, DNS resolver errors.
-- Eligibility engine errors (never silently allow).
-- Send volume anomaly (> 3x rolling mean), bounce > 2%, complaint > 0.1%.
-- Postgres connections > 80%, disk > 80%, backup age > 26h.
+Computed from Postgres at scrape time (correct with any number of replicas): companies, contacts, evidence coverage, stale companies, open duplicates, emails by status, crawl jobs by status, discovery runs, extraction and staging candidates, pages by HTTP status, pages/bytes fetched, BullMQ queue depth, plus Node process metrics.
 
-## Runbooks
+## Suggested alerts
 
-`runbooks/` — one page per alert: symptom, impact, first checks, mitigation, escalation.
+- Crawl queue not draining for 30 min while projects are running (`leadforge_crawl_jobs{status="QUEUED"}` flat and > 0).
+- `leadforge_crawl_jobs{status="BLOCKED"}` rising quickly: sites refusing access, review the policy stops.
+- `leadforge_queue_jobs{queue="dead-letter"}` > 0.
+- Evidence coverage below 1.0: a contact without provenance should not exist.
+- Backup age > 26 h (from your backup job), disk > 80%.
+
+Logs: every service writes JSON lines to stdout (`docker compose logs`). Ship them with your log collector of choice.

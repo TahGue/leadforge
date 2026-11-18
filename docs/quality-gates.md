@@ -143,18 +143,17 @@ Each gate is a checklist with an owner and evidence link. CI + a manual sign-off
 
 ## 5. CI pipeline
 
-```
-1. lint + typecheck (TS, Python)           ~1 min
-2. unit tests                               ~2 min
-3. contract schema check                    ~30 s
-4. integration (compose up, migrations)     ~5 min
-5. adversarial suites                       ~3 min
-6. golden set (changed extractor only)      ~5 min
-7. build images                             ~4 min
-8. secret scan + dependency audit           ~1 min
-```
+`.github/workflows/ci.yml`, all jobs required:
 
-Fail-closed: no merge on red. Nightly adds full E2E, load smoke, and dependency freshness report.
+| Job | Checks |
+| --- | --- |
+| node | install, Prisma generate, migrations on PostGIS, **schema drift check**, reference data + seed, typecheck, compliance and pipeline unit tests, API integration tests, worker integration tests, production build |
+| python | ruff, mypy (strict), all migrations via psql, pytest (SSRF/rebinding, extraction, adapters, AI grounding, crawl + discovery integration, **golden-set precision gate**) |
+| compose | config validity for all profiles and the dev overlay |
+| docker | build all images, start the stack with the crawler, health, seed, API smoke (geography, taxonomy, projects, metrics auth, campaigns frozen = 404), crawler running |
+| secrets | tracked-tree secret scan |
+
+Fail-closed: no merge on red. Run `node scripts/load-test.mjs` before releases that touch queries or indexes.
 
 ---
 
@@ -166,4 +165,5 @@ Fail-closed: no merge on red. Nightly adds full E2E, load smoke, and dependency 
 - [ ] `decisions.md` updated for any architectural change
 - [ ] Rollback plan written (previous image tag + migration reversibility or forward-fix)
 - [ ] Backup taken before deploy
-- [ ] Post-deploy smoke: login, list, evaluate, health endpoint
+- [ ] Post-deploy smoke: login, companies, geography, discovery projects, health endpoint
+- [ ] Restore drill logged within the last quarter

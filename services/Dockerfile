@@ -14,9 +14,16 @@ RUN apt-get update \
 
 COPY pyproject.toml ./
 COPY services/leadforge ./services/leadforge
-RUN pip install --no-cache-dir .
 
-RUN useradd --uid 1001 --create-home worker && mkdir -p /app/data/artifacts \
+# Optional bounded browser rendering (spec 11). Off by default: large image.
+ARG INSTALL_BROWSER=false
+RUN if [ "$INSTALL_BROWSER" = "true" ]; then \
+      pip install --no-cache-dir ".[browser]" && python -m playwright install --with-deps chromium; \
+    else \
+      pip install --no-cache-dir .; \
+    fi
+
+RUN useradd --uid 1001 --create-home worker && mkdir -p /app/data/artifacts /app/data/imports \
     && chown -R worker:worker /app
 USER worker
 

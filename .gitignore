@@ -33,7 +33,11 @@ htmlcov/
 secrets/
 
 # --- Runtime data (never commit) ---
-data/
+# Reference data (data/geography, data/taxonomy) is versioned; runtime data is not.
+data/*
+!data/geography/
+!data/taxonomy/
+!data/imports/
 backups/
 *.sqlite
 *.db
@@ -91,3 +95,12 @@ data/artifacts/
 .pytest_cache/
 pytest-cache-files-*/
 
+
+# --- Operator data and secrets ---
+data/imports/*
+!data/imports/README.md
+!data/imports/sample-registry.csv
+infrastructure/monitoring/metrics-token
+infrastructure/monitoring/grafana-admin-password
+backups/
+apps/web/public/maplibre/

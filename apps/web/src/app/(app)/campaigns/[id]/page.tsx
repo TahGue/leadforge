@@ -1,3 +1,4 @@
+import { features } from "@leadforge/pipeline";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@leadforge/database";
@@ -11,6 +12,7 @@ export default async function CampaignDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  if (!features.campaigns) notFound();
   const session = await requireSession();
   const { id } = await params;
 

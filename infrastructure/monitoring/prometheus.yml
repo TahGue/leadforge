@@ -1,0 +1,18 @@
+# Prometheus scrape config for the monitoring profile (spec section 22).
+# The web app's /api/v1/metrics requires METRICS_TOKEN as a bearer token.
+# Write the same value to infrastructure/monitoring/metrics-token (git-ignored):
+#   printf '%s' "$METRICS_TOKEN" > infrastructure/monitoring/metrics-token
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: leadforge-web
+    metrics_path: /api/v1/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/metrics-token
+    static_configs:
+      - targets: ["web:3000"]
+
+rule_files: []

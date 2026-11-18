@@ -1,250 +1,157 @@
 /**
- * Campaign worker.
+ * LeadForge orchestration worker (ADR-0021).
  *
- * Claims due campaigns, re-evaluates every recipient immediately before send,
- * and records a delivery attempt per message. Safe to run more than one
- * instance: recipients are claimed with a status transition, not a read.
+ *  - BullMQ consumers for the TypeScript stages (company_normalization,
+ *    verify, deduplicate, discovery, refresh) when REDIS_URL is set;
+ *  - a Postgres sweep that does the same work from table state, so the
+ *    pipeline is correct with Redis down or absent;
+ *  - the campaign loop, only when FEATURE_CAMPAIGNS=true (Phase 9).
+ *
+ * Python workers (services/leadforge) claim discovery runs and crawl jobs
+ * directly from Postgres.
  */
-import { createHmac } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
-import nodemailer from "nodemailer";
-import { evaluateForCampaign, prisma, type Prisma } from "@leadforge/database";
+import { Worker, type Job } from "bullmq";
+import { prisma } from "@leadforge/database";
+import {
+  QUEUES,
+  applyRetention,
+  closeQueues,
+  emailsDueForVerification,
+  enqueue,
+  features,
+  finalizeProjects,
+  getQueue,
+  jobId,
+  processCandidate,
+  processPendingCandidates,
+  redisConnection,
+  scanDuplicates,
+  verifyEmail,
+} from "@leadforge/pipeline";
+import { tick as campaignTick } from "./campaigns";
 
 const here = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(here, "../../../.env") });
 
 const POLL_MS = Number(process.env.WORKER_POLL_MS ?? 15_000);
-const MAIL_ENABLED = process.env.MAIL_ENABLED === "true";
-const ALLOWLIST = (process.env.MAIL_TEST_ALLOWLIST ?? "")
-  .split(",")
-  .map((s) => s.trim().toLowerCase())
-  .filter(Boolean);
-const UNSUB_KEY = process.env.UNSUBSCRIBE_SIGNING_KEY ?? "";
-const APP_URL = process.env.APP_URL ?? "http://localhost:3000";
-const FROM = process.env.SMTP_FROM ?? "outreach@localhost";
-const FROM_NAME = process.env.SMTP_FROM_NAME ?? "LeadForge";
-const POSTAL = process.env.MAIL_POSTAL_ADDRESS ?? "";
+const STALE_RUNNING_MINUTES = Number(process.env.WORKER_STALE_RUNNING_MINUTES ?? 30);
+const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
 
-const transport = nodemailer.createTransport({
-  host: process.env.SMTP_HOST ?? "127.0.0.1",
-  port: Number(process.env.SMTP_PORT ?? 587),
-  secure: Number(process.env.SMTP_PORT ?? 587) === 465,
-  requireTLS: Number(process.env.SMTP_PORT ?? 587) === 587,
-  auth:
-    process.env.SMTP_USER && process.env.SMTP_PASSWORD
-      ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD }
-      : undefined,
-});
+const log = (event: string, fields: Record<string, unknown> = {}) =>
+  console.log(JSON.stringify({ ts: new Date().toISOString(), level: "info", service: "worker", event, ...fields }));
+const logError = (event: string, error: unknown, fields: Record<string, unknown> = {}) =>
+  console.error(
+    JSON.stringify({ ts: new Date().toISOString(), level: "error", service: "worker", event, error: (error as Error).message, ...fields }),
+  );
 
-function unsubscribeUrl(emailNormalized: string, campaignId: string): string {
-  const token = createHmac("sha256", UNSUB_KEY)
-    .update(`${emailNormalized}:${campaignId}`)
-    .digest("base64url");
-  const params = new URLSearchParams({ e: emailNormalized, c: campaignId });
-  return `${APP_URL}/unsubscribe/${token}?${params.toString()}`;
-}
-
-function footer(url: string): string {
-  return `<hr /><p style="font-size:12px;color:#666">You received this business email because your role is relevant to ${FROM_NAME}.<br />${FROM_NAME}${POSTAL ? ` - ${POSTAL}` : ""}<br /><a href="${url}">Unsubscribe</a></p>`;
-}
-
-async function sendOne(input: {
-  to: string;
-  subject: string;
-  html: string;
-  text: string;
-  campaignId: string;
-}) {
-  if (!MAIL_ENABLED && !ALLOWLIST.includes(input.to.toLowerCase())) {
-    return { sent: false, reason: "MAIL_DISABLED" as const };
-  }
-  if (MAIL_ENABLED && ALLOWLIST.length > 0 && !ALLOWLIST.includes(input.to.toLowerCase())) {
-    return { sent: false, reason: "NOT_ALLOWLISTED" as const };
-  }
-
-  const info = await transport.sendMail({
-    from: `"${FROM_NAME}" <${FROM}>`,
-    to: input.to,
-    subject: input.subject,
-    html: input.html,
-    text: input.text,
-    headers: {
-      "List-Unsubscribe": `<${unsubscribeUrl(input.to, input.campaignId)}>`,
-      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-    },
+/** Re-queue jobs whose worker died mid-run (lease expiry). Policy-blocked jobs are never touched. */
+export async function recoverStaleJobs(now = new Date()): Promise<{ crawls: number; runs: number }> {
+  const cutoff = new Date(now.getTime() - STALE_RUNNING_MINUTES * 60_000);
+  const crawls = await prisma.crawlJob.updateMany({
+    where: { status: "RUNNING", updatedAt: { lt: cutoff } },
+    data: { status: "QUEUED", scheduledFor: now, errorCode: "lease_expired" },
   });
-  return { sent: true, messageId: info.messageId, response: info.response };
+  const runs = await prisma.discoveryRun.updateMany({
+    where: { status: "RUNNING", startedAt: { lt: cutoff } },
+    data: { status: "QUEUED", scheduledFor: now, errorCode: "lease_expired" },
+  });
+  return { crawls: crawls.count, runs: runs.count };
 }
 
-async function processCampaign(campaignId: string): Promise<void> {
-  const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
-  if (!campaign) return;
-
-  const pending = await prisma.campaignRecipient.findMany({
-    where: { campaignId, status: "PENDING" },
-    take: 50,
-    orderBy: { queuedAt: "asc" },
-    include: { email: true },
-  });
-
-  for (const recipient of pending) {
-    const current = await prisma.campaign.findUnique({
-      where: { id: campaignId },
-      select: { status: true },
-    });
-    if (!current || ["PAUSED", "CANCELLED"].includes(current.status)) return;
-
-    // Claim atomically so two workers cannot send the same message.
-    const claimed = await prisma.campaignRecipient.updateMany({
-      where: { id: recipient.id, status: "PENDING" },
-      data: { status: "SENDING" },
-    });
-    if (claimed.count === 0) continue;
-
-    const evaluation = await evaluateForCampaign(prisma, {
-      organizationId: campaign.organizationId,
-      emailId: recipient.emailId,
-      campaignId,
-      senderIdentityConfigured: Boolean(FROM && POSTAL),
-      unsubscribeConfigured: Boolean(UNSUB_KEY),
-    });
-
-    if (evaluation.outcome !== "ELIGIBLE") {
-      await prisma.$transaction([
-        prisma.campaignRecipient.update({
-          where: { id: recipient.id },
-          data: {
-            status: evaluation.outcome === "SUPPRESSED" ? "SUPPRESSED" : "EXCLUDED",
-            error: evaluation.reasons.map((r) => r.code).join(","),
-            eligibilityDecisionId: evaluation.decisionId,
-          },
-        }),
-        prisma.emailEvent.create({
-          data: {
-            organizationId: campaign.organizationId,
-            emailId: recipient.emailId,
-            campaignId,
-            type: "EXCLUDED",
-            metadata: {
-              reasons: evaluation.reasons as unknown as object[],
-              ruleSetVersion: evaluation.ruleSetVersion,
-            },
-          },
-        }),
-      ]);
-      continue;
-    }
-
+/** Bounded email verification pass (syntax + DNS + MX). */
+export async function verifyDue(limit = 50): Promise<number> {
+  const ids = await emailsDueForVerification(limit);
+  for (const id of ids) {
     try {
-      const url = unsubscribeUrl(recipient.emailSnapshot, campaignId);
-      const outcome = await sendOne({
-        to: recipient.emailSnapshot,
-        subject: campaign.subject,
-        html: `${campaign.bodyHtml}${footer(url)}`,
-        text: `${campaign.bodyText}\n\nUnsubscribe: ${url}`,
-        campaignId,
-      });
-
-      const operations: Prisma.PrismaPromise<unknown>[] = [
-        prisma.campaignRecipient.update({
-          where: { id: recipient.id },
-          data: outcome.sent
-            ? { status: "SENT", sentAt: new Date() }
-            : { status: "EXCLUDED", error: outcome.reason },
-        }),
-        prisma.emailEvent.create({
-          data: {
-            organizationId: campaign.organizationId,
-            emailId: recipient.emailId,
-            campaignId,
-            type: outcome.sent ? "SENT" : "NOT_SENT",
-            providerMessageId: outcome.sent ? outcome.messageId : null,
-            metadata: { reason: outcome.sent ? null : outcome.reason },
-          },
-        }),
-      ];
-
-      // Only a real delivery attempt counts as a send. Test-mode refusals are
-      // recorded as events so the campaign still reports an honest state.
-      if (outcome.sent) {
-        operations.push(
-          prisma.campaignSend.create({
-            data: {
-              campaignId,
-              recipientId: recipient.id,
-              attempt: 1,
-              provider: "smtp",
-              providerMessageId: outcome.messageId,
-              smtpResponse: outcome.response,
-            },
-          }),
-        );
-      }
-
-      await prisma.$transaction(operations);
+      await verifyEmail(id);
     } catch (error) {
-      await prisma.$transaction([
-        prisma.campaignRecipient.update({
-          where: { id: recipient.id },
-          data: { status: "FAILED", error: (error as Error).message.slice(0, 500) },
-        }),
-        prisma.emailEvent.create({
-          data: {
-            organizationId: campaign.organizationId,
-            emailId: recipient.emailId,
-            campaignId,
-            type: "SEND_FAILED",
-            metadata: { error: (error as Error).message.slice(0, 500) },
-          },
-        }),
-      ]);
+      logError("verify_failed", error, { emailId: id });
     }
   }
-
-  const remaining = await prisma.campaignRecipient.count({
-    where: { campaignId, status: { in: ["PENDING", "SENDING"] } },
-  });
-  if (remaining === 0) {
-    await prisma.campaign.update({
-      where: { id: campaignId },
-      data: { status: "COMPLETED", completedAt: new Date() },
-    });
-    console.log(`campaign ${campaignId} completed`);
-  }
+  return ids.length;
 }
 
-async function tick(): Promise<void> {
-  const due = await prisma.campaign.findMany({
-    where: { status: "SCHEDULED", scheduledAt: { lte: new Date() } },
-    take: 5,
-  });
+const lastRun: Record<string, number> = {};
+function due(name: string, everyMs: number, now = Date.now()): boolean {
+  if ((lastRun[name] ?? 0) + everyMs > now) return false;
+  lastRun[name] = now;
+  return true;
+}
 
-  for (const campaign of due) {
-    const claimed = await prisma.campaign.updateMany({
-      where: { id: campaign.id, status: "SCHEDULED" },
-      data: { status: "RUNNING", startedAt: new Date() },
-    });
-    if (claimed.count === 0) continue;
-    console.log(`campaign ${campaign.id} started`);
-    await processCampaign(campaign.id);
+/** One sweep over Postgres state. Idempotent; safe to run on several replicas. */
+export async function sweep(): Promise<Record<string, unknown>> {
+  const report: Record<string, unknown> = {};
+  report.recovered = await recoverStaleJobs();
+  report.normalized = await processPendingCandidates(200);
+  report.verified = await verifyDue(50);
+  report.completed = await finalizeProjects();
+  if (due("dedupe", HOUR_MS)) {
+    const orgs = await prisma.organization.findMany({ select: { id: true } });
+    let added = 0;
+    for (const org of orgs) added += await scanDuplicates(org.id);
+    report.duplicates = added;
   }
+  if (due("retention", DAY_MS)) report.retention = await applyRetention();
+  if (features.campaigns) await campaignTick();
+  return report;
+}
+
+function startQueueWorkers(): Worker[] {
+  const connection = redisConnection();
+  if (!connection) {
+    log("redis_disabled", { note: "orchestration runs from the Postgres sweep only" });
+    return [];
+  }
+  const deadLetter = async (job: Job | undefined, error: Error) => {
+    if (!job || (job.attemptsMade ?? 0) < (job.opts.attempts ?? 1)) return;
+    await enqueue(QUEUES.deadLetter, { queue: job.queueName, data: job.data, error: error.message }, jobId("dlq", job.queueName, job.id ?? "x"));
+  };
+  const make = <T>(name: string, handler: (job: Job<T>) => Promise<unknown>, concurrency = 2) => {
+    const worker = new Worker<T>(name, handler, { connection, concurrency });
+    worker.on("failed", (job, error) => {
+      logError("job_failed", error, { queue: name, jobId: job?.id });
+      void deadLetter(job, error);
+    });
+    return worker;
+  };
+
+  return [
+    make<{ candidateId: string }>(QUEUES.companyNormalization, async (job) => processCandidate(job.data.candidateId), 4),
+    make<{ emailId: string }>(QUEUES.verify, async (job) => verifyEmail(job.data.emailId), 4),
+    make<{ organizationId: string }>(QUEUES.deduplicate, async (job) => scanDuplicates(job.data.organizationId), 1),
+    // A project start/resume nudges an immediate sweep so new runs are visible quickly.
+    make<{ projectId: string }>(QUEUES.discovery, async (job) => processPendingCandidates(500, job.data.projectId), 1),
+    make<Record<string, never>>(QUEUES.refresh, async () => sweep(), 1),
+  ];
 }
 
 async function main(): Promise<void> {
-  console.log(
-    `leadforge worker starting (mail=${MAIL_ENABLED ? "live" : "test"}, poll=${POLL_MS}ms)`,
-  );
+  log("worker_start", { pollMs: POLL_MS, campaigns: features.campaigns, redis: Boolean(redisConnection()) });
   if (process.env.WORKER_ONCE === "true") {
-    await tick();
+    log("sweep", await sweep());
     await prisma.$disconnect();
+    await closeQueues();
     return;
+  }
+
+  const workers = startQueueWorkers();
+  const refresh = getQueue(QUEUES.refresh);
+  if (refresh) {
+    // A repeatable refresh job: the BullMQ path; the timer below is the fallback.
+    await refresh.upsertJobScheduler("refresh-every-minute", { every: 60_000 }, { name: "refresh", data: {} });
   }
 
   let stopping = false;
   const shutdown = async () => {
+    if (stopping) return;
     stopping = true;
+    log("worker_stop");
+    await Promise.all(workers.map((w) => w.close()));
+    await closeQueues();
     await prisma.$disconnect();
     process.exit(0);
   };
@@ -253,15 +160,19 @@ async function main(): Promise<void> {
 
   while (!stopping) {
     try {
-      await tick();
+      const report = await sweep();
+      if (Object.values(report).some((v) => (typeof v === "number" ? v > 0 : Array.isArray(v) ? v.length > 0 : v && typeof v === "object"))) {
+        log("sweep", report);
+      }
     } catch (error) {
-      console.error("worker tick failed", error);
+      logError("sweep_failed", error);
     }
     await new Promise((resolve) => setTimeout(resolve, POLL_MS));
   }
 }
 
-export { tick, processCampaign };
+export { campaignTick as tick };
+export { processCampaign } from "./campaigns";
 
 if (process.env.WORKER_NO_AUTOSTART !== "true") {
   void main();

@@ -1,137 +1,90 @@
 import Link from "next/link";
 import { prisma } from "@leadforge/database";
+import { limits, queueCounts } from "@leadforge/pipeline";
 import { requireSession } from "@/lib/auth";
+import { Card, Empty, PageHeader, Stat, StatusBadge, formatDate } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
-function Stat({ label, value, hint }: { label: string; value: number | string; hint?: string }) {
-  return (
-    <div className="card p-4">
-      <p className="text-xs font-medium uppercase tracking-wide muted">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
-      {hint ? <p className="mt-0.5 text-xs muted">{hint}</p> : null}
-    </div>
-  );
-}
-
 export default async function DashboardPage() {
   const session = await requireSession();
-  const orgId = session.organization.id;
+  const org = session.organization.id;
+  const staleBefore = new Date(Date.now() - limits.companyFreshnessDays * 86_400_000);
 
-  const [companies, contacts, emails, pendingCandidates, campaigns, suppressions, recent] =
+  const [companies, contacts, contactsWithEvidence, emails, crawls, duplicates, stale, needsReview, pendingCandidates, projects, queues] =
     await Promise.all([
-      prisma.company.count({ where: { organizationId: orgId, deletedAt: null } }),
-      prisma.contact.count({ where: { organizationId: orgId, deletedAt: null } }),
-      prisma.emailAddress.count({
-        where: { contacts: { some: { contact: { organizationId: orgId } } } },
+      prisma.company.count({ where: { organizationId: org, deletedAt: null } }),
+      prisma.contact.count({ where: { organizationId: org, deletedAt: null } }),
+      prisma.contact.count({ where: { organizationId: org, deletedAt: null, OR: [{ evidence: { some: {} } }, { sourceUrl: { not: null } }] } }),
+      prisma.emailAddress.groupBy({
+        by: ["status"],
+        where: { contacts: { some: { contact: { organizationId: org } } } },
+        _count: { _all: true },
       }),
-      prisma.extractionCandidate.count({ where: { organizationId: orgId, status: "PENDING" } }),
-      prisma.campaign.count({ where: { organizationId: orgId } }),
-      prisma.suppressionEntry.count({
-        where: { OR: [{ organizationId: orgId }, { organizationId: null }], liftedAt: null },
+      prisma.crawlJob.groupBy({ by: ["status"], where: { organizationId: org }, _count: { _all: true } }),
+      prisma.companyDuplicateCandidate.count({ where: { organizationId: org, status: "OPEN" } }),
+      prisma.company.count({ where: { organizationId: org, deletedAt: null, lastSeenAt: { lt: staleBefore } } }),
+      prisma.company.count({ where: { organizationId: org, deletedAt: null, reviewStatus: "NEEDS_REVIEW" } }),
+      prisma.extractionCandidate.count({ where: { organizationId: org, status: "PENDING" } }),
+      prisma.discoveryProject.findMany({
+        where: { organizationId: org },
+        orderBy: { updatedAt: "desc" },
+        take: 6,
+        include: { _count: { select: { companies: true } } },
       }),
-      prisma.extractionCandidate.findMany({
-        where: { organizationId: orgId },
-        orderBy: { createdAt: "desc" },
-        take: 8,
-        include: { company: { select: { name: true } } },
-      }),
+      queueCounts(),
     ]);
 
-  const verified = await prisma.emailAddress.count({
-    where: {
-      status: { in: ["MX_VALID", "DELIVERABILITY_UNKNOWN"] },
-      contacts: { some: { contact: { organizationId: orgId } } },
-    },
-  });
+  const email = Object.fromEntries(emails.map((e) => [e.status, e._count._all]));
+  const crawl = Object.fromEntries(crawls.map((c) => [c.status, c._count._all]));
+  const coverage = contacts ? Math.round((contactsWithEvidence / contacts) * 100) : 0;
+  const queued = Object.values(queues ?? {}).reduce((n, q) => n + (q.waiting ?? 0) + (q.active ?? 0) + (q.delayed ?? 0), 0);
 
   return (
     <div className="space-y-7">
-      <header className="flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="mt-1 text-sm muted">
-            Pipeline health, review backlog and the state of your lead graph.
-          </p>
-        </div>
-        <Link href="/companies" className="btn btn-primary">
-          Add companies
-        </Link>
-      </header>
+      <PageHeader
+        title="Dashboard"
+        description="Discovery pipeline health, data quality and the review backlog."
+        actions={
+          <Link href="/projects/new" className="btn btn-primary">
+            New discovery project
+          </Link>
+        }
+      />
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Companies" value={companies} />
-        <Stat label="Contacts" value={contacts} />
-        <Stat label="Emails" value={emails} hint={`${verified} verified`} />
-        <Stat label="Review backlog" value={pendingCandidates} hint="candidates pending" />
-        <Stat label="Campaigns" value={campaigns} />
-        <Stat label="Suppressed" value={suppressions} hint="global + org" />
+        <Stat label="Companies discovered" value={companies} href="/companies" />
+        <Stat label="Contacts found" value={contacts} hint={`${coverage}% with source evidence`} href="/contacts" />
+        <Stat label="MX valid" value={email.MX_VALID ?? 0} hint={`${email.SYNTAX_VALID ?? 0} syntax only · ${email.UNDELIVERABLE ?? 0} invalid/no MX`} />
+        <Stat label="Unverified" value={(email.DISCOVERED ?? 0) + (email.DELIVERABILITY_UNKNOWN ?? 0)} hint="awaiting syntax/MX check" />
+        <Stat label="Crawls succeeded" value={(crawl.SUCCEEDED ?? 0) + (crawl.PARTIAL ?? 0)} hint={`${crawl.FAILED ?? 0} failed · ${crawl.BLOCKED ?? 0} blocked`} href="/jobs" />
+        <Stat label="Job queue" value={(crawl.QUEUED ?? 0) + (crawl.RUNNING ?? 0)} hint={queues ? `${queued} orchestration jobs` : "Redis not configured"} href="/jobs" />
+        <Stat label="Duplicate candidates" value={duplicates} href="/duplicates" />
+        <Stat label="Awaiting review" value={needsReview + pendingCandidates} hint={`${needsReview} companies · ${pendingCandidates} extractions`} href="/data-quality" />
+        <Stat label="Stale records" value={stale} hint={`not observed in ${limits.companyFreshnessDays} days`} href="/companies?stale=true" />
       </section>
 
-      <section className="card overflow-hidden">
-        <div className="flex items-center justify-between border-b border-[var(--lf-line)] px-4 py-3">
-          <h2 className="text-sm font-semibold">Latest extraction candidates</h2>
-          <Link href="/review" className="text-xs underline muted">
-            Open review queue
-          </Link>
-        </div>
-        {recent.length === 0 ? (
-          <p className="px-4 py-8 text-sm muted">
-            No candidates yet. Add companies, start a discovery project, and run the crawler worker.
-          </p>
+      <Card title="Recent discovery projects" actions={<Link href="/projects" className="text-xs underline muted">All projects</Link>}>
+        {projects.length === 0 ? (
+          <Empty>No projects yet. Create one to discover companies by geography and industry.</Empty>
         ) : (
           <table className="table">
             <thead>
-              <tr>
-                <th>Value</th>
-                <th>Company</th>
-                <th>Method</th>
-                <th>Confidence</th>
-                <th>Status</th>
-              </tr>
+              <tr><th>Project</th><th>Status</th><th>Companies</th><th>Updated</th></tr>
             </thead>
             <tbody>
-              {recent.map((candidate) => (
-                <tr key={candidate.id}>
-                  <td className="font-mono text-xs">{candidate.normalizedValue}</td>
-                  <td>{candidate.company?.name ?? "—"}</td>
-                  <td className="text-xs muted">{candidate.method}</td>
-                  <td className="tabular-nums">{candidate.confidence.toFixed(2)}</td>
-                  <td>
-                    <span className={`badge ${candidate.status === "PROMOTED" ? "badge-green" : ""}`}>
-                      {candidate.status}
-                    </span>
-                  </td>
+              {projects.map((p) => (
+                <tr key={p.id}>
+                  <td><Link className="font-medium hover:underline" href={`/projects/${p.id}`}>{p.name}</Link></td>
+                  <td><StatusBadge status={p.status} /></td>
+                  <td className="tabular-nums">{p._count.companies}</td>
+                  <td className="text-xs muted">{formatDate(p.updatedAt)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-      </section>
-
-      <section className="grid gap-3 md:grid-cols-3">
-        <div className="card p-4">
-          <h3 className="text-sm font-semibold">1 · Import</h3>
-          <p className="mt-1 text-sm muted">Seed companies and domains from CSV.</p>
-          <Link href="/companies" className="mt-2 inline-block text-sm underline">
-            Import companies →
-          </Link>
-        </div>
-        <div className="card p-4">
-          <h3 className="text-sm font-semibold">2 · Discover</h3>
-          <p className="mt-1 text-sm muted">Queue permitted sources and crawl targets.</p>
-          <Link href="/sources" className="mt-2 inline-block text-sm underline">
-            Manage sources →
-          </Link>
-        </div>
-        <div className="card p-4">
-          <h3 className="text-sm font-semibold">3 · Review</h3>
-          <p className="mt-1 text-sm muted">Promote evidence-backed contacts into the CRM.</p>
-          <Link href="/review" className="mt-2 inline-block text-sm underline">
-            Review queue →
-          </Link>
-        </div>
-      </section>
+      </Card>
     </div>
   );
 }

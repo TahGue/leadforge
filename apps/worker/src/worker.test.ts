@@ -37,7 +37,7 @@ beforeAll(async () => {
   });
 
   const company = await prisma.company.create({
-    data: { organizationId, name: `Worker Fixture ${stamp}`, countryCode: "SE", industry: "Testing" },
+    data: { organizationId, name: `Worker Fixture ${stamp}`, countryCode: "SE", industryLabel: "Testing" },
   });
   const contact = await prisma.contact.create({
     data: { organizationId, companyId: company.id, type: "GENERIC_BUSINESS", confidence: 0.9 },

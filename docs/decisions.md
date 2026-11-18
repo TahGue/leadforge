@@ -231,3 +231,63 @@ Format: **Status** · **Context** · **Decision** · **Consequences**.
 **Decision:** Crawl targets are claimed directly from Postgres with `FOR UPDATE SKIP LOCKED`. Campaign recipients are claimed with an atomic status transition. Redis remains available for cache and future high-throughput fan-out, but is not on the correctness path.
 
 **Consequences:** One source of truth, trivially observable queue state (`status`, `attempts`, `scheduledFor`), and no cross-language serialization layer. Throughput is bounded by Postgres (adequate well past 1M contacts for this workload). Revisit Redis Streams if sustained queue depth exceeds what `SKIP LOCKED` can serve or if fan-out to many workers per stage becomes necessary.
+
+---
+
+## ADR-0020 — Adopt the v1.0 specification as the controlling plan
+
+**Status:** Accepted (2026-11-18)
+
+**Context:** The first implementation followed an outreach-centred plan (now `docs/archive/MEGA-PLAN-v0.md`). The product owner's specification v1.0 is geography- and company-first and puts campaigns in a separately approved Phase 9.
+
+**Decision:** `docs/MEGA-PLAN.md` is now specification v1.0. The code is realigned according to `docs/REALIGNMENT-PLAN.md`. Campaign and delivery code is frozen behind `FEATURE_CAMPAIGNS` (default `false`) rather than deleted.
+
+**Consequences:** Discovery capabilities (geography, taxonomy, project builder, source adapters) take priority. The campaign code keeps its tests but serves no traffic until legal review approves Phase 9.
+
+---
+
+## ADR-0021 — BullMQ for orchestration, Postgres claims for crawling (amends ADR-0019)
+
+**Status:** Accepted (2026-11-18)
+
+**Context:** Spec §17 asks for Redis + BullMQ, with Postgres as the system of record. BullMQ has no maintained Python consumer, and the crawler already claims work safely with `FOR UPDATE SKIP LOCKED`.
+
+**Decision:** TypeScript orchestration queues (`discovery`, `source_search`, `company_normalization`, `deduplicate`, `verify`, `classify`, `export`, `refresh`) run on BullMQ. Job IDs are deterministic, retries are bounded with exponential backoff, and exhausted jobs move to a `dead-letter` queue. Python stages (`source_search` adapters, `crawl`, `extract`, `classify`) claim rows from Postgres job tables (`discovery_runs`, `crawl_jobs`). Policy denials are terminal states (`BLOCKED`), never retries.
+
+**Consequences:** Queue state is still reconstructible from Postgres. Redis loss delays orchestration but never loses business state: a `refresh` sweep re-enqueues pending work from Postgres.
+
+---
+
+## ADR-0022 — PostGIS is required; local development uses a container
+
+**Status:** Accepted (2026-11-18)
+
+**Context:** Geography (spec §6) needs spatial types and radius queries. The embedded-Postgres fallback can't load extensions.
+
+**Decision:** Every environment runs `postgis/postgis:16-3.5`. Local development starts it with `docker compose up -d postgres redis`. The embedded-Postgres and pglite fallbacks are removed.
+
+**Consequences:** Docker is a prerequisite for development. Spatial columns use `geography(Point,4326)` managed by SQL migrations (Prisma treats them as `Unsupported`).
+
+---
+
+## ADR-0023 — UI components: Tailwind with local shadcn-style primitives, TanStack Table, React Hook Form
+
+**Status:** Accepted (2026-11-18)
+
+**Context:** Spec §8 names shadcn/ui. shadcn is a generator that copies component source into the repo; it isn't a runtime dependency.
+
+**Decision:** Primitives live in `apps/web/src/components/ui/`, written in the shadcn style (Tailwind classes, no runtime theme library). Tables use `@tanstack/react-table`, forms use `react-hook-form` with Zod schemas shared from `@leadforge/shared`, and maps use `maplibre-gl` with an operator-configured tile style (`NEXT_PUBLIC_MAP_STYLE_URL`).
+
+**Consequences:** No Radix dependency until a component needs it. The default map shows no basemap tiles unless the operator configures a permitted tile source (spec §21).
+
+---
+
+## ADR-0024 — Geography seed is bundled; full GeoNames import is operator-run
+
+**Status:** Accepted (2026-11-18)
+
+**Context:** GeoNames dumps are large (hundreds of MB) and licensed CC BY 4.0, which requires attribution.
+
+**Decision:** The repo ships continents, all ISO 3166-1 countries, and a curated Nordic set of regions and cities in `data/geography/seed/`. `scripts/import-geonames.mjs` imports `countryInfo.txt`, `admin1CodesASCII.txt` and `citiesNNNN.txt` that the operator downloads. Each import is recorded in `geo_import_batches` with its licence and attribution.
+
+**Consequences:** A fresh install works offline for the initial scope. Wider coverage is one documented command away.

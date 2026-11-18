@@ -14,6 +14,7 @@ permissions:
 
 env:
   DATABASE_URL: postgresql://leadforge:leadforge@127.0.0.1:5432/leadforge?schema=public
+  REDIS_URL: redis://127.0.0.1:6379/0
   SESSION_SECRET: ci-session-secret-ci-session-secret-0000
   UNSUBSCRIBE_SIGNING_KEY: ci-unsubscribe-key-ci-unsubscribe-key
   MAIL_POSTAL_ADDRESS: LeadForge CI, Testgatan 1, 111 22 Stockholm
@@ -21,11 +22,11 @@ env:
 
 jobs:
   node:
-    name: Node - typecheck, build, integration
+    name: Node - typecheck, tests, build
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgis/postgis:16-3.5
         env:
           POSTGRES_USER: leadforge
           POSTGRES_PASSWORD: leadforge
@@ -35,6 +36,14 @@ jobs:
           --health-cmd "pg_isready -U leadforge"
           --health-interval 10s
           --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 3s
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
@@ -58,14 +67,21 @@ jobs:
       - name: Apply migrations
         run: pnpm --filter @leadforge/database run deploy
 
-      - name: Seed
-        run: pnpm --filter @leadforge/database run seed
+      - name: Schema matches migrations
+        run: node scripts/check-schema-drift.mjs
+
+      - name: Reference data and seed
+        run: |
+          node packages/database/prisma/reference.mjs
+          pnpm --filter @leadforge/database run seed
 
       - name: Typecheck
         run: pnpm -r --if-present typecheck
 
-      - name: Compliance unit tests
-        run: pnpm --filter @leadforge/compliance test
+      - name: Unit tests (compliance, pipeline)
+        run: |
+          pnpm --filter @leadforge/compliance test
+          pnpm --filter @leadforge/pipeline test
 
       - name: API integration tests
         run: pnpm --filter @leadforge/web test
@@ -81,7 +97,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgis/postgis:16-3.5
         env:
           POSTGRES_USER: leadforge
           POSTGRES_PASSWORD: leadforge
@@ -112,12 +128,13 @@ jobs:
       - name: Mypy
         run: uv run mypy services/leadforge
 
-      - name: Apply schema
+      - name: Apply all migrations
         env:
           PGPASSWORD: leadforge
-        run: >-
-          psql -h 127.0.0.1 -U leadforge -d leadforge -v ON_ERROR_STOP=1
-          -f packages/database/prisma/migrations/20260101000000_init/migration.sql
+        run: |
+          for file in $(ls -d packages/database/prisma/migrations/*/ | sort); do
+            psql -h 127.0.0.1 -U leadforge -d leadforge -v ON_ERROR_STOP=1 -q -f "${file}migration.sql"
+          done
 
       - name: Pytest
         run: uv run pytest
@@ -130,8 +147,8 @@ jobs:
       SESSION_SECRET: ci-session-secret-ci-session-secret-0000
     steps:
       - uses: actions/checkout@v4
-      - name: Validate
-        run: docker compose config -q
+      - name: Validate (all profiles, dev overlay)
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile crawler --profile ai --profile monitoring config -q
 
   docker:
     name: Docker - build and smoke test stack
@@ -139,8 +156,7 @@ jobs:
     env:
       POSTGRES_PASSWORD: ci-password
       SESSION_SECRET: ci-session-secret-ci-session-secret-0000
-      UNSUBSCRIBE_SIGNING_KEY: ci-unsubscribe-key-ci-unsubscribe-key
-      MAIL_POSTAL_ADDRESS: LeadForge CI, Testgatan 1, 111 22 Stockholm
+      METRICS_TOKEN: ci-metrics-token
     steps:
       - uses: actions/checkout@v4
 
@@ -148,13 +164,13 @@ jobs:
         run: docker compose --profile crawler build
 
       - name: Start stack
-        run: docker compose up -d postgres redis migrate web worker
+        run: docker compose --profile crawler up -d postgres redis migrate web worker crawler
 
       - name: Wait for health
         run: |
           for i in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:3000/api/v1/health; then
-              echo "healthy"
+              echo " healthy"
               exit 0
             fi
             sleep 5
@@ -165,15 +181,25 @@ jobs:
       - name: Seed database
         run: docker compose exec -T web node packages/database/prisma/seed.mjs
 
-      - name: Login and read API smoke test
+      - name: API smoke test
         run: |
           curl -fsS -X POST http://127.0.0.1:3000/api/v1/auth/login \
             -H 'content-type: application/json' \
             -d '{"email":"admin@leadforge.local","password":"ChangeMe123!"}' \
             -c cookies.txt
           curl -fsS -b cookies.txt http://127.0.0.1:3000/api/v1/companies > /dev/null
-          curl -fsS -b cookies.txt http://127.0.0.1:3000/api/v1/jurisdictions > /dev/null
+          curl -fsS -b cookies.txt "http://127.0.0.1:3000/api/v1/geography/cities?country=SE&q=gote" | grep -q "teborg"
+          curl -fsS -b cookies.txt "http://127.0.0.1:3000/api/v1/industries?tree=1" | grep -q '"LEADFORGE"'
+          curl -fsS -b cookies.txt http://127.0.0.1:3000/api/v1/discovery-projects > /dev/null
+          test "$(curl -s -o /dev/null -w '%{http_code}' -b cookies.txt http://127.0.0.1:3000/api/v1/campaigns)" = "404"
+          curl -fsS -H "authorization: Bearer ${METRICS_TOKEN}" http://127.0.0.1:3000/api/v1/metrics | grep -q leadforge_companies
           echo "api smoke passed"
+
+      - name: Crawler worker is running
+        run: |
+          sleep 5
+          docker compose ps crawler --format '{{.State}}' | grep -q running
+          docker compose logs crawler | grep -q "worker start"
 
       - name: Logs on failure
         if: failure()
@@ -181,7 +207,7 @@ jobs:
 
       - name: Tear down
         if: always()
-        run: docker compose down -v
+        run: docker compose --profile crawler down -v
 
   secrets:
     name: Secret scan
@@ -193,5 +219,3 @@ jobs:
           node-version-file: .nvmrc
       - name: Scan tracked tree
         run: node scripts/secret-scan.mjs
-
-  

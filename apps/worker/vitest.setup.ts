@@ -7,3 +7,4 @@ process.env.MAIL_ENABLED = "false";
 process.env.MAIL_TEST_ALLOWLIST = "";
 process.env.SMTP_FROM = "outreach@leadforge.test";
 process.env.WORKER_NO_AUTOSTART = "true";
+process.env.REDIS_URL = "";

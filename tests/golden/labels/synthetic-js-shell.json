@@ -1,0 +1,14 @@
+{
+  "url": "https://spa.example/",
+  "region": null,
+  "archetype": "client-rendered",
+  "labeler": "synthetic",
+  "emails": [],
+  "phones": [],
+  "traps": [
+    {
+      "value": "contact@spa.example",
+      "reason": "noscript"
+    }
+  ]
+}

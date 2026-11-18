@@ -55,20 +55,16 @@ Everything crossing into the system is validated and treated as data: page HTML,
 
 ## 4. SSRF guard (the critical control)
 
-Implemented once in `packages/shared/net/guard` (TS) and `services/crawler/safety` (Python), with identical conformance tests.
+All outbound HTTP to untrusted hosts is made by the Python engine (crawler, source adapters, robots.txt). The TypeScript side only makes DNS lookups for MX checks.
 
-1. Parse URL strictly (`urlparse`); reject non-http(s), userinfo, non-default ports unless allowlisted, IP literals.
-2. Reject hostnames resolving to:
-   - loopback `127.0.0.0/8`, `::1`
-   - private `10/8`, `172.16/12`, `192.168/16`, `fc00::/7`
-   - link-local `169.254/16`, `fe80::/10`
-   - CGNAT `100.64/10`
-   - multicast, broadcast, reserved, documentation ranges
-   - cloud metadata `169.254.169.254`, `metadata.google.internal`
-3. Resolve DNS once; validate **every** returned A/AAAA; pin the connection to the validated IP while preserving the `Host` header.
-4. Re-validate after each redirect (max 10); reject downgrade to non-http(s).
-5. Deny by default for egress: container firewall allows only 80/443 outbound from crawl workers.
-6. Test corpus includes: decimal/octal/hex IP encodings, `0.0.0.0`, `[::]`, `localhost.`, trailing-dot tricks, DNS rebinding scenario, redirect chains, IPv6-mapped IPv4.
+1. **`services/leadforge/safety.py` `validate_url`** runs on every URL and redirect hop. It allows only http/https, rejects credentials in URLs, blocked ports (SSH, SMTP, databases, Redis…), `localhost`, `*.localhost` and metadata hostnames, and IP literals or resolved addresses in loopback, private, link-local, CGNAT, multicast, reserved, IPv4-mapped IPv6 or cloud-metadata ranges.
+2. **`services/leadforge/net.py` `SafeNetworkBackend`** re-resolves the host *at connection time*, refuses if any answer is blocked, and connects only to vetted addresses (TLS SNI still uses the hostname). A DNS answer that changes between validation and connect (rebinding) cannot reach an internal address.
+3. Redirects are followed manually (max `CRAWLER_MAX_REDIRECTS`) and may not leave the site's registrable domain.
+4. Streamed byte limit, content-type allowlist, connect and read timeouts. Unix sockets are refused.
+5. Network isolation: the crawler sits on `internal` + `egress` networks only. Postgres, Redis and Ollama are on the `internal` network, which has no route out. Add a host egress firewall allowing 80/443 (and 53) from the crawler.
+6. Tests (`tests/test_net.py`, `tests/test_safety.py`): private, metadata and mixed answers at connect time, redirect to a private IP, off-site redirect, policy-stop statuses, oversized and non-HTML bodies, challenge pages.
+
+Playwright rendering (opt-in) applies the same per-request validation and site restriction through request interception. Chromium resolves DNS itself, so connection-time pinning does not cover it: keep it disabled unless needed, and rely on the egress firewall.
 
 ---
 
@@ -145,13 +141,15 @@ Runbooks live in `infrastructure/monitoring/runbooks/`; a tabletop exercise is p
 
 ## 11. Security acceptance checklist
 
-- [ ] SSRF suite green (both languages, identical fixtures)
-- [ ] Tenant-leak suite green on every endpoint
-- [ ] No `dangerouslySetInnerHTML` without review annotation
-- [ ] Secret scan clean; no `.env` in history
-- [ ] Open-relay test rejected
-- [ ] Rate limits verified on auth + export
-- [ ] Restore from encrypted backup verified
-- [ ] Dependency audit clean (or documented exceptions)
-- [ ] CSRF + CSP verified in a browser
-- [ ] Kill switch tested
+Status at the realignment release (2026-11-18):
+
+- [x] SSRF suite green, including connection-time rebinding (`tests/test_net.py`, `tests/test_safety.py`)
+- [x] Tenant scoping on every endpoint (`organizationId` in every query; cross-org test in `api.integration.test.ts`)
+- [x] No `dangerouslySetInnerHTML` in the app; extracted text is rendered as text by React
+- [x] Secret scan clean in CI (`scripts/secret-scan.mjs`); `.env` ignored
+- [x] Metrics endpoint private (404 without `METRICS_TOKEN`, 401 on a wrong token; tested)
+- [x] Policy-blocked jobs cannot be re-queued by non-admins (tested)
+- [x] Restore drill verified ([runbooks](./runbooks.md#restore-drill-log)); encrypting the offsite copy is the operator's job
+- [x] Same-origin check on cookie-authenticated mutations; secure cookies when `APP_URL` is https
+- [ ] Dependency audit before each release (`pnpm audit`, `uv pip list --outdated`)
+- [ ] Open-relay and mail tests: Phase 9 only

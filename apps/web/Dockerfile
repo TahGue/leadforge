@@ -11,16 +11,20 @@ COPY apps/worker/package.json apps/worker/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/compliance/package.json packages/compliance/package.json
+COPY packages/pipeline/package.json packages/pipeline/package.json
 # Lifecycle scripts are not needed to install; Prisma is generated explicitly.
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 FROM deps AS build
 COPY . .
+# Public map style is inlined into the client bundle at build time.
+ARG NEXT_PUBLIC_MAP_STYLE_URL=""
+ENV NEXT_PUBLIC_MAP_STYLE_URL=${NEXT_PUBLIC_MAP_STYLE_URL}
 # Prisma needs a syntactically valid URL at generate time; it does not connect.
 ENV DATABASE_URL="postgresql://user:pass@localhost:5432/db?schema=public"
 RUN node node_modules/prisma/build/index.js generate --schema packages/database/prisma/schema.prisma
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN cd apps/web && node ../../node_modules/next/dist/bin/next build
+RUN node scripts/copy-maplibre-worker.mjs && cd apps/web && node ../../node_modules/next/dist/bin/next build
 
 FROM base AS runtime
 ENV NODE_ENV=production

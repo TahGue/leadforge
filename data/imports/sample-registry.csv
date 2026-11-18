@@ -1,0 +1,6 @@
+organisation_number,name,legal_form,city,region,country,sni,website,employees,founded
+SAMPLE-0001,Exempel Bygg AB,AB,Göteborg,Västra Götalands län,SE,41200,https://bygg.example,10-49,1998
+SAMPLE-0002,Exempel El & Installation AB,AB,Mölndal,Västra Götalands län,SE,43210,https://el.example,1-9,2011
+SAMPLE-0003,Exempel Mjukvara AB,AB,Stockholm,Stockholms län,SE,62010,https://mjukvara.example,10-49,2015
+SAMPLE-0004,Exempel Logistik AB,AB,Borås,Västra Götalands län,SE,49410,https://logistik.example,50-249,1987
+SAMPLE-0005,Beispiel Bau GmbH,GmbH,Hamburg,Hamburg,DE,41200,https://bau.example,10-49,2003

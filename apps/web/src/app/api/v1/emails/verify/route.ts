@@ -4,7 +4,7 @@ import { ApiError, normalizeEmail, parseBody, verifyRequest } from "@leadforge/s
 import { isDisposableDomain, isFreeProvider, isRoleAccount } from "@leadforge/shared";
 import { json, withAuth } from "@/lib/api";
 import { audit } from "@/lib/audit";
-import { verifyEmail } from "@/lib/verify";
+import { verifyEmail } from "@leadforge/pipeline";
 
 export const dynamic = "force-dynamic";
 

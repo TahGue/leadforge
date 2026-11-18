@@ -84,7 +84,7 @@ beforeAll(async () => {
       organizationId,
       name: `Fixture AB ${stamp}`,
       countryCode: "SE",
-      industry: "Testing",
+      industryLabel: "Testing",
       confidence: 0.9,
     },
   });

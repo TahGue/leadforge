@@ -1,0 +1,81 @@
+country	iso_code	name	ascii_name
+SE	SE-AB	Stockholms län	Stockholms lan
+SE	SE-AC	Västerbottens län	Vasterbottens lan
+SE	SE-BD	Norrbottens län	Norrbottens lan
+SE	SE-C	Uppsala län	Uppsala lan
+SE	SE-D	Södermanlands län	Sodermanlands lan
+SE	SE-E	Östergötlands län	Ostergotlands lan
+SE	SE-F	Jönköpings län	Jonkopings lan
+SE	SE-G	Kronobergs län	Kronobergs lan
+SE	SE-H	Kalmar län	Kalmar lan
+SE	SE-I	Gotlands län	Gotlands lan
+SE	SE-K	Blekinge län	Blekinge lan
+SE	SE-M	Skåne län	Skane lan
+SE	SE-N	Hallands län	Hallands lan
+SE	SE-O	Västra Götalands län	Vastra Gotalands lan
+SE	SE-S	Värmlands län	Varmlands lan
+SE	SE-T	Örebro län	Orebro lan
+SE	SE-U	Västmanlands län	Vastmanlands lan
+SE	SE-W	Dalarnas län	Dalarnas lan
+SE	SE-X	Gävleborgs län	Gavleborgs lan
+SE	SE-Y	Västernorrlands län	Vasternorrlands lan
+SE	SE-Z	Jämtlands län	Jamtlands lan
+NO	NO-03	Oslo	Oslo
+NO	NO-11	Rogaland	Rogaland
+NO	NO-15	Møre og Romsdal	More og Romsdal
+NO	NO-18	Nordland	Nordland
+NO	NO-31	Østfold	Ostfold
+NO	NO-32	Akershus	Akershus
+NO	NO-33	Buskerud	Buskerud
+NO	NO-34	Innlandet	Innlandet
+NO	NO-39	Vestfold	Vestfold
+NO	NO-40	Telemark	Telemark
+NO	NO-42	Agder	Agder
+NO	NO-46	Vestland	Vestland
+NO	NO-50	Trøndelag	Trondelag
+NO	NO-55	Troms	Troms
+NO	NO-56	Finnmark	Finnmark
+DK	DK-81	Region Nordjylland	Region Nordjylland
+DK	DK-82	Region Midtjylland	Region Midtjylland
+DK	DK-83	Region Syddanmark	Region Syddanmark
+DK	DK-84	Region Hovedstaden	Region Hovedstaden
+DK	DK-85	Region Sjælland	Region Sjaelland
+FI	FI-01	Ahvenanmaa	Ahvenanmaa
+FI	FI-02	Etelä-Karjala	Etela-Karjala
+FI	FI-03	Etelä-Pohjanmaa	Etela-Pohjanmaa
+FI	FI-04	Etelä-Savo	Etela-Savo
+FI	FI-05	Kainuu	Kainuu
+FI	FI-06	Kanta-Häme	Kanta-Hame
+FI	FI-07	Keski-Pohjanmaa	Keski-Pohjanmaa
+FI	FI-08	Keski-Suomi	Keski-Suomi
+FI	FI-09	Kymenlaakso	Kymenlaakso
+FI	FI-10	Lappi	Lappi
+FI	FI-11	Pirkanmaa	Pirkanmaa
+FI	FI-12	Pohjanmaa	Pohjanmaa
+FI	FI-13	Pohjois-Karjala	Pohjois-Karjala
+FI	FI-14	Pohjois-Pohjanmaa	Pohjois-Pohjanmaa
+FI	FI-15	Pohjois-Savo	Pohjois-Savo
+FI	FI-16	Päijät-Häme	Paijat-Hame
+FI	FI-17	Satakunta	Satakunta
+FI	FI-18	Uusimaa	Uusimaa
+FI	FI-19	Varsinais-Suomi	Varsinais-Suomi
+DE	DE-BW	Baden-Württemberg	Baden-Wurttemberg
+DE	DE-BY	Bayern	Bayern
+DE	DE-BE	Berlin	Berlin
+DE	DE-BB	Brandenburg	Brandenburg
+DE	DE-HB	Bremen	Bremen
+DE	DE-HH	Hamburg	Hamburg
+DE	DE-HE	Hessen	Hessen
+DE	DE-MV	Mecklenburg-Vorpommern	Mecklenburg-Vorpommern
+DE	DE-NI	Niedersachsen	Niedersachsen
+DE	DE-NW	Nordrhein-Westfalen	Nordrhein-Westfalen
+DE	DE-RP	Rheinland-Pfalz	Rheinland-Pfalz
+DE	DE-SL	Saarland	Saarland
+DE	DE-SN	Sachsen	Sachsen
+DE	DE-ST	Sachsen-Anhalt	Sachsen-Anhalt
+DE	DE-SH	Schleswig-Holstein	Schleswig-Holstein
+DE	DE-TH	Thüringen	Thuringen
+GB	GB-ENG	England	England
+GB	GB-SCT	Scotland	Scotland
+GB	GB-WLS	Wales	Wales
+GB	GB-NIR	Northern Ireland	Northern Ireland

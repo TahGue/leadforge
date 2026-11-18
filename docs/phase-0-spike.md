@@ -1,102 +1,42 @@
-# Phase 0 — Proving Ground
+# Phase 0 spike — measure extraction yield on real sites
 
-**Duration:** 2 weeks · **Output:** a go/no-go decision, not a product.
+Spec Phase 0 and REALIGNMENT-PLAN R2. The goal is to learn, before scaling, whether public company websites give usable business contacts at a useful rate and precision.
 
-The entire business case rests on one unproven claim: *public company websites contain enough accurate, legally usable business contact data to build a useful database without paid sources.* Phase 0 tests that claim cheaply, before any UI exists.
+## 1. Choose the sample (a person's decision)
 
----
+- 50 real company domains across at least 3 countries and several sectors, in your target market (for example Sweden, Norway, Germany).
+- Mix of site types: small-business sites, WordPress, shop platforms, larger corporates, and sites likely to be JavaScript-rendered.
+- Only companies you have a legitimate reason to research; no personal sites.
 
-## 1. Questions to answer
+Write them to `tests/fixtures/phase0-domains.txt`, one per line (`#` comments allowed). The example file shows the format.
 
-| # | Question | How it is measured |
-| --- | --- | --- |
-| Q1 | How often does a company site expose at least one real business email? | companies with ≥1 extracted email / 50 |
-| Q2 | How accurate is deterministic extraction? | hand-checked precision on a 25-email sample |
-| Q3 | How many of those are actual contact routes vs junk? | role vs personal vs vendor/asset ratio |
-| Q4 | How much does crawling cost in time and bandwidth? | pages, seconds, MB per company |
-| Q5 | Where does extraction fail? | failure taxonomy per archetype |
-| Q6 | Can we stay polite and unblocked? | blocks, 429s, robots denials |
-
----
-
-## 2. Sample design
-
-50 companies, deliberately unbalanced to expose failure modes:
-
-| Archetype | Count | Why |
-| --- | --- | --- |
-| Small local business (SE/DE) | 10 | `Impressum` pages, often the richest source |
-| Mid-market B2B SaaS | 10 | JS-heavy, footer-only contacts |
-| Agency / consultancy | 10 | team pages with personal emails |
-| Manufacturer / industrial | 10 | old HTML, PDF contact sheets |
-| Professional services (law/accounting) | 5 | strict consent posture, good test of compliance gate |
-| E-commerce | 5 | widget noise, `support@` / `noreply@` traps |
-
-Exclude: anything behind a login, anything whose robots.txt disallows crawling, anything in a jurisdiction you are not prepared to process.
-
----
-
-## 3. Protocol
-
-### Week 1 — build the probe
-
-1. `services/crawler` — minimal HTTPX fetch with the **real SSRF guard** and robots check (do not spike with an unsafe fetcher; you will reuse this code).
-2. `services/extractor` — mailto + JSON-LD + visible-text regex, `SELECTOLAX` parsing, Pydantic candidate model.
-3. `services/verifier` — syntax + DNS + MX only.
-4. CLI:
+## 2. Run
 
 ```bash
-python -m leadforge.probe run --domains tests/fixtures/phase0-domains.txt --out data/phase0/
-python -m leadforge.probe report data/phase0/
+export CRAWLER_USER_AGENT="LeadForgeResearchBot/0.2 (+https://your-domain.example/crawler-policy)"
+python -m leadforge.spike tests/fixtures/phase0-domains.txt --out reports/phase0 --max-pages 4 --delay 3
 ```
 
-5. Storage: files on disk (JSONL), no database. Throwaway by design.
+The spike uses the production crawler's network layer: SSRF guard, robots.txt, policy stops, byte limits. It needs no database. Output:
 
-### Week 2 — run, label, decide
+- `reports/phase0/summary.md`: yield tables and the exit-criteria checklist
+- `reports/phase0/results.csv`: one row per extracted value, with page, method, category and snippet
 
-1. Crawl all 50 (homepage + up to 5 likely contact pages, 2s delay).
-2. Export candidate list; hand-label 25 emails: correct / wrong / junk.
-3. Classify every failure by cause.
-4. Write `docs/phase-0-findings.md` with tables and a recommendation.
+## 3. Label
 
----
+Open `results.csv`. For at least 25 email rows, set `label_correct` to `y` or `n` by checking the rendered page (not the extractor's output). An email is correct if the page shows it as a contact address of that company.
 
-## 4. Measurement sheet
-
-| Company | URL | Pages | Emails found | Unique | Role | Personal | Vendor/junk | MX ok | Notes |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-
-Summary rows:
-
-```
-companies_with_email / 50            = ___
-total_unique_emails                  = ___
-precision (25 sample)                = ___ / 25
-median_pages_per_company             = ___
-median_seconds_per_company           = ___
-blocks / 429 / robots_denials        = ___ / ___ / ___
-archetypes_with_zero_yield           = ___
+```bash
+python -m leadforge.evaluate --spike reports/phase0/results.csv
 ```
 
----
+Add 10 to 20 of the labelled pages to the golden set (`tests/golden/pages` and `labels`, format in `tests/golden/README.md`), so CI guards precision from then on.
 
-## 5. Decision thresholds
+## 4. Exit criteria
 
-| Outcome | Condition | Action |
-| --- | --- | --- |
-| **Go** | ≥ 15/50 companies with a usable email, precision ≥ 85% | proceed to Phase 1 as planned |
-| **Conditional** | 8–14/50 or precision 70–85% | proceed, but add a structured-source adapter (registries/directories) to the critical path in Phase 3 |
-| **Pivot** | < 8/50 or precision < 70% | stop. Re-scope to directory-first discovery, or narrow to a vertical where structured data exists |
-| **Stop** | systematic blocks or legal ambiguity | do not build; revisit sourcing model |
+- No enforcement block or complaint during the run.
+- At least 15 companies with a usable business email.
+- Hand-checked precision of at least 85% on a sample of 25 or more emails.
+- No SSRF or robots violation (covered by `tests/test_net.py` and the crawler tests).
 
-Write the decision into `docs/decisions.md` as an ADR with the numbers attached.
-
----
-
-## 6. What Phase 0 must not become
-
-- A dashboard. No UI.
-- A database schema. JSONL is enough.
-- A general crawler. One process, sequential per domain.
-- A data-quality crusade. Measure, do not perfect.
-- A reason to skip safety. The SSRF guard and robots check are built here because they are reused verbatim later.
+Record the outcome in `docs/phase-0-findings.md`: the summary table, precision, notable failure modes, and the go/no-go decision. If yield is poor, move toward registry and dataset sources (`open_dataset` adapter) before investing in more crawling.

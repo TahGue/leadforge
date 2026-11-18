@@ -1,538 +1,525 @@
-# LeadForge — Mega-Plan
+# LeadForge — Mega Plan & Technical Implementation Specification
+
+**Version:** 1.0 · **Date:** 18 November 2026 · **Status:** Controlling specification (see ADR-0020 in [decisions.md](./decisions.md))
+**Project type:** Local-first, self-hosted B2B company and business-contact discovery platform
+
+> This document is the controlling plan. Where any other document disagrees, this one wins until an ADR amends it.
+> The earlier outreach-centred plan is archived at [`archive/MEGA-PLAN-v0.md`](./archive/MEGA-PLAN-v0.md).
+> How the existing code is being brought in line is described in [`REALIGNMENT-PLAN.md`](./REALIGNMENT-PLAN.md).
+
+## 1. Executive summary
+
+LeadForge is a self-hosted B2B market-discovery and contact-research platform. Users create discovery projects by selecting a geographic scope — city, region, country, continent, or worldwide — then narrowing the target by industry, subsector, company characteristics, online presence, language, contact role, data quality, and exclusions.
+
+The platform discovers companies first, then extracts evidence-backed business contact details from permitted sources. Every important field retains provenance: source URL, observation time, extraction method, confidence, and freshness.
+
+Company discovery, contact discovery, legal basis/permission, campaign eligibility, and message delivery are separate stages. Discovering an email address does not grant permission to send marketing.
+
+### Product principles
+
+1. **Local-first:** crawling, extraction, storage, enrichment, and local AI run on infrastructure controlled by the operator.
+2. **Self-hosted:** no mandatory paid SaaS APIs or external LLM APIs.
+3. **Geography-led:** city, country, and continent are first-class filters.
+4. **Evidence-based:** every extracted value is traceable.
+5. **Company-first:** discover and deduplicate companies before contacts.
+6. **Compliance by design:** respect source terms, robots policies, access restrictions, privacy obligations, and opt-outs.
+7. **No fabricated contacts:** AI must never invent emails, people, phone numbers, or company facts.
+8. **Scalable:** support 100,000 records initially, with a path toward one million.
+9. **Human approval:** campaign eligibility and sending require explicit review.
+10. **Auditable:** log crawls, transformations, verification, eligibility, and campaign events.
 
-**Version:** 1.0 · **Status:** Approved for Phase 0 · **Date:** 2026-11-18
-**Owner:** Founding engineer · **Target:** self-hosted B2B lead intelligence, 1M+ contacts
+## 2. Scope and non-goals
 
----
+### In scope
 
-## How to read this document
+- Discovery projects driven by geography, sector, subsector, and advanced filters.
+- Company discovery through permitted public sources and configured adapters.
+- User-provided domains, CSV imports, and approved datasets.
+- Bounded website crawling and contact extraction.
+- Company classification, normalization, deduplication, and enrichment.
+- Email syntax and DNS/MX checks.
+- Provenance, confidence, freshness, search, review, tagging, and export.
+- Local AI classification through Ollama.
+- Compliance review and campaign eligibility gates.
+- Later integration with operator-managed SMTP.
 
-This is the controlling plan. Everything else elaborates on it:
+### Explicit non-goals
 
-| Document | Question it answers |
-| --- | --- |
-| [`architecture.md`](./architecture.md) | How do the processes fit together? |
-| [`data-model.md`](./data-model.md) | What is stored, and what invariants hold? |
-| [`compliance.md`](./compliance.md) | When is data allowed to be processed and mailed? |
-| [`roadmap.md`](./roadmap.md) | In what order, with what exit criteria? |
-| [`security.md`](./security.md) | What can go wrong, and what stops it? |
-| [`quality-gates.md`](./quality-gates.md) | What must be true before a phase ships? |
-| [`decisions.md`](./decisions.md) | Why were the big choices made? |
-| [`backlog.md`](./backlog.md) | What are the concrete work items? |
-| [`open-questions.md`](./open-questions.md) | What still needs a human decision? |
+- Bypassing logins, paywalls, CAPTCHAs, access controls, or anti-bot challenges.
+- Stealth browser fingerprints, residential proxy rotation, or evasion infrastructure.
+- Ignoring robots directives, source terms, rate limits, or opt-outs.
+- Harvesting private/non-public information.
+- Guessing personal email addresses and treating them as discovered or verified.
+- SMTP mailbox probing or recipient enumeration.
+- Automatically adding discovered contacts to campaigns.
+- Treating MX validity as proof of mailbox existence or marketing permission.
 
-If a supporting document contradicts this one, this one wins until an ADR amends it.
+## 3. Target workflows
 
----
+### A. Discover companies
 
-## 0. TL;DR
+1. Create a discovery project.
+2. Select city, region, country, continent, or worldwide scope.
+3. Select industry, subsector, and keywords.
+4. Apply company, website, language, and technology filters.
+5. Select permitted sources.
+6. Set crawl limits and quality thresholds.
+7. Preview scope and policy warnings.
+8. Start discovery and monitor jobs.
+9. Review, deduplicate, tag, and export results.
 
-1. **The hard problem is not the dashboard.** It is producing a contact record that is accurate, evidenced, deduplicated, legally gated, and fresh — repeatedly, at volume, without paid APIs.
-2. **Five bets** define the product (Section 2): evidence-first data, replayable pipeline, compliance-as-code, honest deliverability, and an agent-ready API.
-3. **Build the engine before the CRM.** Phase 0 is a two-week spike that crawls 50 real companies end-to-end and measures yield. If yield is bad, the whole product thesis changes — find that out before writing UI.
-4. **v1 is deliberately small:** import domains → crawl → extract → verify → review → suppress → draft a campaign with an eligibility preview. No outbound mail to the public internet in v1. That is a Phase 8 gate.
-5. **The non-negotiable line:** discovering an email never authorizes contacting it. Discovery, eligibility, and delivery are three separate systems with three separate data models.
+### B. Discover business contacts
 
----
+1. Select companies or a project.
+2. Choose contact categories: general, sales, procurement, management, press, support, or named professional contacts where lawfully available.
+3. Crawl permitted company pages.
+4. Extract only evidence-backed contact details.
+5. Store source and extraction evidence.
+6. Validate syntax and DNS/MX.
+7. Review uncertain results.
+8. Export or retain in the company dataset.
 
-## 1. What LeadForge is — and is not
+### C. Prepare a campaign (later phase)
 
-### It is
+1. Create a draft.
+2. Select a target segment.
+3. Run jurisdiction- and recipient-type-specific eligibility checks.
+4. Exclude suppressed, objected, bounced, complained-about, and otherwise ineligible recipients.
+5. Review legal basis and source evidence.
+6. Approve content and recipient list.
+7. Send a test and then controlled batches.
+8. Process bounces, complaints, unsubscribe requests, and replies.
 
-A **self-hosted lead intelligence system**: it discovers companies from permitted public sources, extracts business contact data with provenance, verifies what can be verified, stores it in a queryable CRM, and drives compliant outreach from the same database.
+Discovery must never automatically trigger a campaign.
 
-A **data-ownership play**. Every record lives in your Postgres. Every field can be traced to the URL, fetch time, and content hash it came from. Export is a first-class feature, not a hostage negotiation.
+## 4. Product navigation
 
-An **evidence engine**. Competitors sell rows; LeadForge sells rows plus "why should I believe this row, and when was it last true?"
+- Dashboard
+- Market Explorer — Map · Geographic browser · Industry browser · Search results
+- Discovery Projects — New project · Active jobs · Completed projects · Project results
+- Companies — All companies · Lists and segments · Duplicate review
+- Contacts — All contacts · Verification · Suppression list
+- Sources — Source registry · Source policies · Crawl history
+- Data Quality — Missing fields · Low-confidence records · Stale records · Human review
+- Campaigns (later)
+- Analytics
+- Settings
 
-### It is not
+Dashboard metrics should include companies discovered, contacts found, source evidence coverage, syntax/MX statuses, duplicate candidates, crawl success/failure/blocked counts, job queue state, stale records, and records awaiting review.
 
-- A bulk email cannon. Volume without permission is how domains die.
-- A stealth scraper. No residential proxy rotation, no CAPTCHA solving, no login-wall bypass, no robots.txt evasion. Those "features" are business-ending liabilities, not features.
-- A data marketplace. No reselling of third-party personal data.
-- A real-time intent-data product (job postings, funding, tech-install signals). That is a v2+ layer with different sourcing and legal questions.
-- A multi-tenant SaaS on day one. The schema is org-scoped from the first migration so it *can* become one; v1 runs single-org.
+## 5. Discovery project builder
 
----
+The project builder should be a guided wizard with a persistent scope summary and a preview before execution.
 
-## 2. The enhanced thesis — five bets
+### 5.1 Geography filters
 
-The original specification is a good component inventory. A component inventory is not a strategy. These five bets are what make the inventory worth building.
+Hierarchy: `Continent → Country → Administrative region/state → City → Postal code`. Support one or many locations at any level.
 
-### Bet 1 — Provenance is the product
+Fields: geographic mode (city, region, country, continent, worldwide, custom selection); continent and country; region/state/province; city; postal code or prefix; optional radius around a point; include/exclude locations; include nearby cities (explicit opt-in); headquarters only, any branch, or all known locations; location confidence requirement.
 
-Most lead databases degrade because nobody can tell where a value came from or whether it is still true. LeadForge makes provenance structural:
+Use stable geographic identifiers and country codes. Do not rely on free-text city names because city names can repeat across countries.
 
-- No field is stored without a `source_evidence` row (URL, fetch timestamp, content hash, extractor version).
-- Every contact has a **confidence score** derived from evidence type, recency, and corroboration count.
-- The UI always answers "why do we believe this?" and "when did we last see it?"
-- Stale data is *marked* stale, never silently served as fresh.
+### 5.2 Industry and sector filters
 
-Consequence for the schema: `evidence` is not a side table, it is the spine. Extraction writes candidates; promotion writes records *with* evidence in the same transaction.
+Hierarchy: `Industry taxonomy → Sector → Subsector → Specialisation → Keywords`.
 
-### Bet 2 — Replay beats re-crawl
+Support NACE, ISIC, NAICS, or other applicable external codes; an internal normalized taxonomy; user-defined sectors and subsectors; include/exclude keywords; company description, product, and service keywords; optional technology categories.
 
-Crawling is expensive, slow, and rate-limited. Extraction logic will change fifty times. Therefore raw pages must be stored immutably (content-addressed, compressed, TTL'd), and the pipeline must be re-runnable from stored pages without touching the network.
+Initial broad sectors: IT and software · Manufacturing · Construction · Healthcare · Education · Retail and e-commerce · Logistics and transportation · Finance and insurance · Real estate · Hospitality and tourism · Energy and utilities · Professional services · Agriculture and food · Automotive · Media and communications · Wholesale and distribution · Other / unclassified.
 
-- New extractor version → replay the last N days of stored HTML → measure precision change before deploying.
-- Parser bug → reprocess, don't re-crawl.
-- This turns extraction quality into a measurable, iterable engineering problem instead of a guess.
+Store classification source, method, confidence, and taxonomy version. A company may belong to multiple industries.
 
-### Bet 3 — Compliance is executable, not a policy PDF
+### 5.3 Company filters
 
-"Default deny" is only real if it is code with tests. LeadForge ships a **jurisdiction profile engine**: data-driven rules per country/region, an immutable eligibility decision record per send, and an explainability API that says exactly which rule blocked a recipient.
+Employee count range and size band; revenue range, only when backed by a reliable source; legal form / entity type; active, inactive, newly registered, or unknown; founded/registration year range; headquarters versus branch; independent, subsidiary, or franchise where evidence supports it; domain required/optional; website reachable/unreachable/unknown; HTTPS required; social profiles present; description required; exclude customers, competitors, or previously contacted companies.
 
-- Rules are versioned artifacts. Every decision cites `rule_set_version`.
-- Re-evaluation is mandatory immediately before send; a decision older than 24h is invalid.
-- Legal review changes a profile, not a codebase.
+Do not invent revenue or employee counts. Store sourced estimates as estimates.
 
-### Bet 4 — Deliverability is an engineering discipline, not a checkbox
+### 5.4 Contact filters
 
-Self-hosted SMTP is where naive builds die: bad IP reputation, missing PTR, no warmup, no complaint feedback loop, no bounce classification. LeadForge treats sending as a system with its own state machine (domain, IP, warmup day, per-ISP rate, reputation signals) rather than a `sendmail()` call.
+General company email; sales; procurement/purchasing; management/executive; press/media; support/customer service; careers/recruitment; named professional contact; phone number; contact form URL; role-based only, named only, or both; exclude free-mail providers (optional); require source evidence; require syntax-valid email; require MX-valid domain; minimum confidence.
 
-- Provider interface (`SmtpProvider`) so an ESP can be swapped in without touching campaign logic.
-- Honest scope: v1 sends to internal test inboxes only; public sending is gated behind warmup + authentication proof.
+Store contact role separately from contact type and address.
 
-### Bet 5 — The lead graph is agent-ready
+### 5.5 Website and technology filters
 
-The most valuable 2026+ integration surface is not a CSV export. It is a local MCP server + typed REST API so a user's own agents can query the lead graph, draft outreach, and propose segments — with the same eligibility gate enforced server-side.
+Website exists/absent/unknown; CMS (WordPress, Drupal, Joomla, etc.); e-commerce (Shopify, Magento, WooCommerce, etc.); framework (Next.js, React, Vue, Angular, etc.); website language; HTTPS/TLS status; contact page and careers page presence; online booking, shop, or catalogue presence.
 
-This is a differentiator incumbents structurally cannot copy: their data is their moat; ours is the user's.
+Technology detection is heuristic; save evidence and detection time.
 
-### What we deliberately reject
+### 5.6 Language filters
 
-| Temptation | Why not |
-| --- | --- |
-| Scrape LinkedIn / gated networks | ToS violation, account bans, legal exposure |
-| SMTP mailbox probing to "verify" inboxes | Unreliable, abusive, gets IPs blocklisted |
-| Rotating residential proxies | Evasion; contradicts source policy and reputation strategy |
-| LLM-generated emails/companies | Hallucinated contacts destroy trust and can create legal exposure |
-| Buying a data dump to seed the DB | No provenance, no lawful basis, poisoned dataset |
-| Microservices from day one | 12 services × 1 developer = zero features shipped |
+Website language; preferred company communication language; multiple languages; unknown-language handling; detection confidence. Do not assume website language is an individual contact's preferred language.
 
----
+### 5.7 Sources and discovery controls
 
-## 3. Non-negotiable principles
+Source categories: company websites; user-provided domains; public business directories where reuse is permitted; search engines only through permitted interfaces and under their terms; official registries and open datasets with compatible licences; licensed datasets imported by the operator.
 
-1. **Evidence or it does not exist.** Every promoted field has provenance.
-2. **Discovery ≠ permission.** Separate stores, separate services, separate approval gates.
-3. **Default deny.** Unknown jurisdiction, missing basis, missing suppression check → blocked.
-4. **Robots and source policy are enforced in code**, with a per-source `permitted` flag that defaults to false.
-5. **The LLM never authors facts.** It classifies, normalizes, and ranks. It cannot create an email address, a company, or an eligibility decision.
-6. **Idempotency everywhere.** Deterministic keys; replays must not duplicate rows or double-send.
-7. **Every mutation is auditable.** Immutable audit log; no update/delete privileges for the app role on it.
-8. **No secret in the repo, no port on the public internet.** Postgres/Redis/MinIO bind to loopback or a private Docker network.
-9. **Freshness is visible.** Age is a first-class attribute in UI and API.
-10. **Kill criteria are written before the feature is built** (Section 19).
+Project controls: maximum companies; maximum pages per company; maximum crawl depth; requests per domain per time window; global and per-source concurrency; crawl timeout; retry count and backoff; allowed/excluded URL patterns; maximum response size; accepted content types; crawl freshness window; stop conditions; human approval for high-volume runs.
 
----
+### 5.8 Exclusions
 
-## 4. Users and jobs to be done
+Existing customers and competitors; previously contacted companies; suppressed domains and email addresses; countries, cities, sectors, domains, and keywords; excluded source domains; previously processed companies; companies without sufficient evidence.
 
-**Primary persona — the operator (you).** Runs a small agency or a founder-led sales motion. Needs 200–2,000 qualified companies per month in a niche, with contact routes that survive reply-rate scrutiny. Cares about: source control, cost per lead, "can I actually email this?"
+### 5.9 Data quality filters
 
-**Secondary persona — the analyst.** Reviews extraction output, resolves duplicates, approves records. Cares about: throughput, keyboard shortcuts, diff views, batch actions, clear confidence signals.
+Minimum independent source observations; official website required; source URL required for every contact; minimum extraction confidence; maximum record age; email syntax and MX status; website reachability; duplicate status; human-reviewed status.
 
-**Tertiary persona — the engineer/integrator.** Consumes the API/MCP server. Cares about: stable contracts, pagination, idempotency, webhooks, OpenAPI schema.
+### 5.10 Project preview
 
-| Job | Success looks like |
-| --- | --- |
-| "Find companies like my best customers" | ICP definition → discovery project → 500 candidates in a day |
-| "Get me a real person or a real inbox" | Contact with role, name where public, verified domain/MX, confidence ≥ threshold |
-| "Don't let me spam people" | Eligibility preview blocks the bad 30% before a campaign exists |
-| "Prove where this came from" | One click → source URL, snapshot, timestamp, extractor version |
-| "Keep it fresh" | Re-crawl scheduler flags records older than N days |
-| "Use it from my own tools" | API key + MCP server + webhooks |
+Show geography, taxonomy, company/contact constraints, selected sources and policy status, exclusions, crawl budget, record cap, warnings, and filters likely to reduce coverage. Estimates are not guarantees of available records.
 
----
+## 6. Geographic data architecture
 
-## 5. Scope ladder
+Recommended datasets and tools: **GeoNames** for broad global geographic names and hierarchy; **OpenStreetMap** for features and boundaries, subject to its licence and attribution rules; **Nominatim** for geocoding only under its usage policy (self-hosted or appropriately licensed for production volume); **ISO 3166** for country and subdivision codes; **PostGIS** for spatial queries and indexing.
 
-### v0 — Proving ground (2 weeks)
+Do not use the public Nominatim endpoint as a bulk geocoding backend. Respect data licences, attribution, redistribution, and update requirements.
 
-Crawl a fixed list of 50 domains, extract emails/companies, verify, write evidence. CLI + notebook only. **Purpose:** measure real-world yield and decide whether the thesis holds.
+Geography entities: `continents`, `countries`, `admin_regions`, `cities`, `postal_areas`, `geo_aliases`, `geo_import_batches`. Store stable external identifiers, ISO codes, display and alternate names, parent IDs, centroid, boundary geometry, source, licence, and import version.
 
-### v1 — Usable single-operator system (≈14 weeks)
+Example projects: construction companies in Gothenburg; software companies in Sweden; manufacturers in Västra Götaland; logistics companies in Germany; healthcare providers in the Nordic countries; e-commerce businesses in Europe; worldwide companies in a defined subsector. A project may contain multiple locations and exclusion zones.
 
-Auth, companies, contacts, domains, CSV import, source registry, discovery projects, crawler, extractor, evidence + review queue, verification, suppression, jurisdiction profiles for a small set, eligibility preview, campaign drafts, CSV export. **No public sending.**
+## 7. Industry taxonomy architecture
 
-### v1.5 — Send-capable
+Use a normalized internal taxonomy with mappings to external classifications.
 
-Postfix integration, test-inbox delivery, DKIM/SPF/DMARC verification tooling, bounce ingestion, unsubscribe tokens, warmup scheduler, campaign send.
+Tables: `industries`, `industry_taxonomy_versions`, `industry_external_codes`, `industry_aliases`, `company_industries`, `discovery_industry_filters`.
 
-### v2 — Scale + intelligence
+Fields: `id`, `parent_id`, `code`, `name`, `description`, `taxonomy`, `taxonomy_version`, `external_code`, `language`, `is_active`.
 
-OpenSearch, ICP scoring, saved searches + alerts, entity resolution at 1M scale, MCP server, webhooks, multi-org, RBAC, audit exports, re-verification scheduler, segment builder.
+Keep mappings versioned. A company may have multiple industry classifications, with a primary flag and confidence score.
 
-### Later / maybe
+## 8. Recommended technology stack
 
-Signal layer (hiring, tech stack, funding), outreach copilot (local drafting), CRM sync (HubSpot/Salesforce), data-subject request portal, BIMI, deliverability seed testing.
-
-### Never
-
-Login-wall bypass, CAPTCHA solving, proxy rotation for evasion, SMTP probing, LLM-fabricated data, third-party data resale.
-
----
-
-## 6. Architecture at a glance
-
-```
-                       ┌──────────────────────────────┐
-                       │  web (Next.js App Router)    │
-                       │  dashboard · review · campaigns│
-                       └──────────────┬───────────────┘
-                                      │ typed fetch / RSC
-                       ┌──────────────▼───────────────┐
-                       │  api (Next.js route handlers)│
-                       │  authz · zod · prisma · audit│
-                       └───┬──────────┬──────────┬────┘
-                           │          │          │
-             ┌─────────────▼──┐  ┌────▼─────┐  ┌─▼──────────────┐
-             │ Postgres       │  │ Redis    │  │ MinIO (pages)  │
-             │ source of truth│  │ streams  │  │ content-addr.  │
-             └───────▲────────┘  └────┬─────┘  └────────────────┘
-                     │                │ consumer groups
-     ┌───────────────┴────────────────┴───────────────────────────┐
-     │  Python workers: discovery · crawl · extract · verify      │
-     │  Node workers: campaign · mail-ingestion                   │
-     └───────────────┬───────────────────────────────────────────┘
-                     │
-        ┌────────────▼─────────────┐   ┌──────────────────────┐
-        │ Ollama (classification)  │   │ Postfix + OpenDKIM   │
-        │ never authors facts      │   │ v1.5+, gated         │
-        └──────────────────────────┘   └──────────────────────┘
-```
-
-### 6.1 The event spine
-
-Two distinct mechanisms, deliberately:
-
-- **Commands (work to do)**: Redis Streams with consumer groups. At-least-once delivery, explicit ack, retry with backoff, dead-letter stream. Used for `crawl.fetch`, `extract.page`, `verify.email`, `campaign.send`.
-- **Facts (what happened)**: Postgres `domain_events` written in the same transaction as the state change (transactional outbox). Used for audit, analytics, integrations, and rebuilding derived state.
-
-Why not one mechanism? BullMQ is excellent inside Node but awkward to consume from Python; Redis Streams are natively understood by both and give us durable consumer groups. Why not Kafka? Operational overkill at this scale; Redis is already required.
-
-### 6.2 Replayability contract
-
-Every pipeline artifact is addressable and immutable:
-
-```
-fetch(page)   -> fetch_artifact  (url, status, headers_hash, body_sha256, stored_at)
-extract(fetch)-> extraction_run  (extractor_version, model_version, candidates[])
-promote(cand) -> company/contact/email + evidence rows (same transaction)
-```
-
-Re-running `extract` over `fetch_artifact` is a supported operation with a dedicated CLI and a golden-set regression check.
-
-### 6.3 Language boundary
-
-- **TypeScript**: web, API, business rules, campaign engine, compliance evaluation (it is rule logic and belongs next to the data).
-- **Python**: crawling, parsing, extraction, verification, bulk data ops (Polars), NLP/LLM calls.
-- **Contract**: JSON Schema generated from Zod, checked into `packages/shared/contracts`, consumed by Pydantic models. Contract tests on both sides in CI.
-
----
-
-## 7. The pipeline, stage by stage
-
-### 7.1 Discovery — "what should we look at?"
-
-Input: ICP definition or explicit domain list.
-Output: prioritized `crawl_target` rows: url, source_id, priority, reason, dedupe key (canonical URL hash).
-
-- Adapters implement a narrow interface: `search(query, cursor) -> [Candidate]`, plus `policy()` metadata.
-- Registry order: user CSV (P0) → company websites (P0) → directories (P1) → permitted search APIs (P1) → public registries (P2).
-- Discovery never claims facts. A search result is a hint with a URL; only a fetch can produce evidence.
-- Budget: each project has `max_targets`, `max_pages_per_domain`, `max_depth`. Hard caps enforced in the worker, not the UI.
-
-### 7.2 Crawl — "fetch safely, once"
-
-The crawler is the most dangerous component in the system (SSRF, abuse complaints, resource exhaustion). Design it defensively:
-
-- URL validation before every request *and* after every redirect: scheme allowlist (http/https), no credentials in URL, no non-standard ports, no IP literals unless explicitly allowed, block private/loopback/link-local/CGNAT/multicast/metadata ranges (169.254.169.254, ::1, fc00::/7, etc.).
-- **DNS pinning**: resolve once, validate all resolved IPs, connect to the validated IP with the original Host header — defeats DNS rebinding.
-- Per-domain token bucket + global semaphore; `max_concurrent_domains=10`, `1` per domain, 2s delay default, jittered.
-- Robots: fetch and cache `robots.txt` per domain (TTL 24h), honor `Disallow`/`Crawl-delay`, identify a real UA with contact URL.
-- HTTP first; Playwright only when a JS signal is detected (empty body, framework shell, `<noscript>` hint) and budget remains.
-- Stop conditions: 401/403/429/451/paywall/CAPTCHA → mark domain cooldown, never retry aggressively.
-- Size caps (2 MB), timeout (20s HTTP / 45s browser), redirect cap (10), content-type allowlist.
-- Raw body stored content-addressed (sha256) + zstd in MinIO; `fetch_artifact` row holds metadata. TTL default 90 days, configurable.
-
-### 7.3 Extraction — "turn bytes into candidates"
-
-Deterministic first, AI last:
-
-1. `mailto:` links (decode, strip query/fragment/tracking params).
-2. JSON-LD / Schema.org (`Organization`, `ContactPoint`, `email`).
-3. Visible contact blocks (regex + DOM heuristics, obfuscation handling: `[at]`, `&#64;`, Cloudflare email protection decode).
-4. Contact/about/team/impressum pages (routed by URL + link text, multi-locale: kontakt, contacto, impressum, mentions légales).
-5. Footer/structured microdata.
-6. Ollama classification of *page type* and *role/seniority* — never to generate or repair an address.
-
-Guards against classic false positives:
-
-- Skip emails inside `<script>`, `<style>`, comments, hidden nodes.
-- Reject asset filenames (`logo@2x.png`), example/test domains, placeholder addresses (`noreply@`, `sentry@`, `wixpress.com`), third-party widget vendors (Intercom, HubSpot, Calendly, Shopify) unless page is that vendor's own site.
-- Deduplicate by normalized address; record every occurrence as evidence but promote once.
-- Every candidate carries: extractor version, method, DOM path/selector, surrounding text snippet, confidence.
-
-### 7.4 Verification — "how much do we actually know?"
-
-Statuses are a lattice, not a boolean, and are never conflated:
-
-`DISCOVERED → SYNTAX_VALID → DNS_VALID → MX_VALID → (DELIVERABILITY_UNKNOWN) → SUPPRESSED | UNDELIVERABLE`
-
-- Syntax: RFC-compliant validator + strict normalization (lowercase domain, preserve local-part case only if meaningful, IDN → punycode for DNS, Unicode → NFC).
-- DNS: A/AAAA and MX with timeout, retry, and caching; implicit MX (A record fallback) handled explicitly.
-- No SMTP probing. Ever. MX does not prove an inbox exists, and probing burns reputation.
-- Enrichment signals kept separate from verification: disposable-domain list, role-account classification (`info@`, `sales@` = generic business), free-provider flag, domain age, pattern inference (`first.last@` inferred → labeled **INFERRED**, never eligible without review).
-- Freshness TTL: re-verify MX every 90 days; re-crawl high-value domains every 30–90 days.
-
-### 7.5 Review & promotion — "humans where it matters"
-
-- Candidate records land in a **review queue** with a confidence score and reason codes.
-- Bulk actions, keyboard-first, side-by-side evidence drawer (render sanitized text, never raw HTML).
-- Auto-promote only above a high threshold for low-risk types (generic business inbox on a corporate domain with MX + corroboration ≥ 2); everything personal goes to review in v1.
-- Promotion is transactional and writes evidence rows; rejection records a reason (feeds extractor tuning).
-
-### 7.6 Compliance gate — see Section 9.
-
-### 7.7 Campaign & send — see Section 10.
-
----
-
-## 8. The data core
-
-Full detail in [`data-model.md`](./data-model.md). The invariants that matter:
-
-1. **Org-scoped everything.** Every business table carries `organization_id`; Postgres RLS enforces it in addition to app filters. A missing org filter must fail closed, not leak.
-2. **Domain is an entity, not a string.** `domains` owns crawl state, robots cache, policy, cooldown, reputation. `company_domains` links company↔domain (unique domain).
-3. **Emails are global-ish, contacts are org-scoped.** `email_addresses.normalized` is globally unique (dedupe across orgs), while `contacts`/`companies` are org-owned. Evidence and verification attach to the email, eligibility attaches to (org, email, campaign).
-4. **Candidates are separate from records.** `extraction_candidates` is an append-only staging table; promotion creates `contacts`/`email_addresses` rows. This keeps the crawler from writing directly into the CRM.
-5. **Eligibility decisions are immutable and expiring.** `eligibility_decisions` rows are append-only with `rule_set_version`, `inputs_hash`, `expires_at`.
-6. **Suppression is org-wide and permanent until explicitly lifted**, checked at send time and at list-build time.
-7. **Audit log is append-only**, partitioned monthly, with no UPDATE/DELETE for the app role.
-
-Partitioning and indexing plan (hit at scale, designed now): `email_events`, `audit_logs`, `fetch_artifacts`, `extraction_candidates` partitioned by month; BRIN on time columns; GIN trigram on `companies.name`; btree on `(organization_id, created_at desc)` for cursor pagination.
-
----
-
-## 9. Compliance-as-code
-
-Full detail in [`compliance.md`](./compliance.md). The engine:
-
-```
-evaluate(org, email, campaign_context) -> {
-  outcome: ELIGIBLE | NOT_ELIGIBLE | NEEDS_REVIEW | SUPPRESSED | UNKNOWN_JURISDICTION,
-  rule_set_version, reasons[], required_actions[], expires_at
-}
-```
-
-Design rules:
-
-- **Three separate questions**, never merged: (a) may we collect/store this? (b) may we process it for this purpose? (c) may we send marketing to it now?
-- Jurisdiction is resolved from domain TLD + company country + recipient entity type; ambiguity → `UNKNOWN_JURISDICTION` → block.
-- Corporate vs individual recipient is a first-class distinction (PECR corporate subscriber, Swedish Marketing Act natural-person consent rule, CAN-SPAM's broader commercial-email scope).
-- Every campaign requires a documented lawful basis and a balancing assessment where legitimate interest is used.
-- Sender identity, physical address, and a functioning one-click unsubscribe are structural requirements, not template suggestions.
-- All rule profiles are **draft pending counsel review**; enabling a country requires a signed-off profile version (see `open-questions.md`).
-
-**Default-deny matrix:** missing country, missing basis, missing suppression check, unverified domain, stale decision, generic role account without org-level basis, or any open objection → block.
-
----
-
-## 10. Deliverability engineering
-
-The part most self-hosted lead tools get catastrophically wrong. v1.5 scope:
-
-- **Identity**: dedicated subdomain for cold outreach (e.g. `outreach.example.com`), separate from transactional; SPF, DKIM (2048-bit), DMARC `p=none` → `quarantine` → `reject` progression with reporting.
-- **Network**: static IP with matching PTR/A, port 25 outbound, TLS, no residential IP, no shared IP with other senders.
-- **Warmup state machine**: day 1: 20 sends to engaged/internal, ramp schedule, per-ISP caps (Google/Microsoft/Yahoo separated), automatic pause on bounce/complaint threshold breach.
-- **Reputation gates**: hard bounce < 2%, complaint < 0.1%, spam-trap hits = 0 → else auto-pause campaign and surface an incident.
-- **Hygiene**: sunset policy for unengaged recipients, re-verification before large sends, no purchased lists, seeded test inboxes (Gmail/Outlook/Yahoo) before first send.
-- **Content linting**: local rule set (link ratio, image/text ratio, spammy phrases, tracking pixel sanity), no external spam-score API dependency.
-- **Bounce classification**: parse DSNs (5.x.x hard, 4.x.x soft), map to suppression, feed back into verification status.
-- **FBL/complaint loop**: ARF parsing at `mail-ingestion`, immediate suppression, campaign incident record.
-
-Honest caveat, stated up front to the user: self-hosted cold outreach at scale is reputation war, not a configuration task. The architecture keeps an ESP swap one interface away.
-
----
-
-## 11. AI with guardrails (Ollama)
-
-Allowed: page-type classification, industry mapping, job-title normalization, duplicate-candidate ranking, extraction-review assistance, drafting *suggestions* for humans.
-
-Forbidden: inventing emails/companies/people, deciding eligibility, generating final send content without human approval, executing tools or fetching URLs.
-
-Implementation:
-
-- Strict JSON schema output (`format: json` + Pydantic validation + repair-once + reject on second failure).
-- Prompt + model versions recorded on every AI-derived row; A/B against a golden set.
-- **Prompt injection defense**: page content is wrapped as data, never instructions; model has no tools; output schema cannot express "send" or "eligible".
-- Fallback: if Ollama is down, pipeline continues deterministically (classification fields stay null, not guessed).
-- Embeddings (`nomic-embed-text`) in Postgres via `pgvector` for dedupe and semantic search — no separate vector DB.
-
----
-
-## 12. UX surface map
-
-| Screen | Core interaction | Why it exists |
+| Layer | Technology | Purpose |
 | --- | --- | --- |
-| Dashboard | pipeline health, review backlog, recent discoveries | one glance: is the machine working? |
-| Companies | virtualized table, filters, saved views | the inventory |
-| Company detail | evidence drawer, contacts, crawl history, freshness | the "why believe this" surface |
-| Review queue | keyboard triage, approve/reject/bulk, confidence | throughput bottleneck lives here |
-| Discovery projects | ICP → targets → yield stats | repeatable sourcing |
-| Sources | policy status, yield, error rate, cooldowns | governance + ROI |
-| Verification | status distribution, stale queue, re-run | trust maintenance |
-| Suppression | search/add/import, reason audit | legal safety |
-| Campaigns | builder → eligibility preview → approval → schedule | the payoff |
-| Settings | org, users, API keys, jurisdiction profiles, retention | control |
+| Frontend | Next.js + TypeScript | Admin UI and project builder |
+| UI | Tailwind CSS + shadcn/ui | Interface |
+| Forms | React Hook Form + Zod | Form state and validation |
+| Tables | TanStack Table | Filtering and large result sets |
+| Maps | MapLibre GL JS | Self-hostable map UI |
+| API | Next.js route handlers initially | Application endpoints |
+| ORM | Prisma | Typed database access |
+| Database | PostgreSQL | Main relational store |
+| Geospatial | PostGIS | Geography and radius queries |
+| Queue | Redis + BullMQ | Job orchestration |
+| Crawler | Python + HTTPX | Efficient HTTP crawling |
+| Browser automation | Playwright | JS-heavy pages only |
+| HTML parsing | Selectolax / BeautifulSoup | Extraction |
+| Schemas | Pydantic | Strict structured output |
+| Local AI | Ollama | Classification and extraction assistance |
+| Data processing | Polars | Batch transformations |
+| Analytics | DuckDB | Local analytics and exports |
+| Search | PostgreSQL FTS initially | Search |
+| Extended search | OpenSearch, if measured need | Larger-scale search |
+| Object storage | Local filesystem / MinIO | Crawl artefacts |
+| SMTP (later) | Postfix + OpenDKIM + Rspamd | Operator-managed email |
+| Observability | Prometheus + Grafana | Metrics |
+| Deployment | Docker Compose | Self-hosting |
 
-Design constraints: server-side pagination only, no client-side 1M-row tables; every list has a cursor; every mutation optimistic with server reconciliation; empty states teach the pipeline.
+Start as a modular monolith plus separate Python workers. Do not introduce Kubernetes or many microservices prematurely. Deviations are recorded in [`decisions.md`](./decisions.md).
 
----
+## 9. High-level architecture
 
-## 13. Security posture
+```
+                         ┌──────────────────────────┐
+                         │       Next.js UI         │
+                         │ Market Explorer / Admin  │
+                         └────────────┬─────────────┘
+                                      │
+                         ┌────────────▼─────────────┐
+                         │       Application API    │
+                         │ Auth / Projects / Search │
+                         └──────┬─────────────┬─────┘
+                                │             │
+                         ┌──────▼─────┐ ┌─────▼─────────┐
+                         │ PostgreSQL │ │ Redis / Queue │
+                         │ + PostGIS  │ │ BullMQ        │
+                         └──────┬─────┘ └─────┬─────────┘
+                                │             │
+                     ┌──────────▼─────────────▼──────────┐
+                     │         Python workers            │
+                     │ Discovery / Crawl / Extract       │
+                     │ Normalize / Verify / Enrich       │
+                     └──────┬──────────────┬─────────────┘
+                            │              │
+                  ┌─────────▼──────┐ ┌─────▼────────────┐
+                  │ Permitted      │ │ Ollama           │
+                  │ source adapters│ │ local inference  │
+                  └────────────────┘ └──────────────────┘
 
-Summary here, full model in [`security.md`](./security.md).
+                 Later, separately gated:
+                 Eligibility → Approval → SMTP → Events
+```
 
-- SSRF guard shared by HTTP and browser fetch paths (allowlist + IP validation + DNS pinning + redirect re-validation).
-- Stored-XSS defense: scraped HTML is never rendered raw; evidence viewer shows extracted text + sanitized excerpt.
-- Multi-tenant isolation: app-level scoping + Postgres RLS + tests that attempt cross-org reads on every endpoint.
-- Auth: Argon2id password hashing, short-lived sessions, TOTP optional, API keys hashed at rest with prefix lookup.
-- Secrets: `.env` for dev, Docker secrets / age-encrypted file for prod; never in git; rotation runbook.
-- PII at rest: column-level encryption for consent evidence and contact PII where jurisdiction requires; encryption keys outside DB.
-- Export safety: CSV formula injection escaping; import size/row caps; zip-bomb limits.
-- Mail: submission requires auth, relay restricted to authenticated senders only, rate limits per account, open-relay test in CI.
+Processing stages: (1) validate project; (2) expand geographic scope; (3) plan source queries; (4) discover company candidates; (5) normalize and deduplicate; (6) resolve company websites; (7) schedule policy-aware crawls; (8) fetch pages; (9) extract company/contact evidence; (10) validate structured output; (11) classify and enrich; (12) check email syntax and DNS/MX; (13) score confidence and freshness; (14) send uncertain records to human review; (15) update search and analytics; (16) export or use in CRM workflows; (17) optionally evaluate campaign eligibility.
 
----
+## 10. Discovery source strategy
 
-## 14. Capacity and performance model
+### Source adapters
 
-Planning assumptions, not promises. Re-measure in Phase 0.
+```python
+class SourceAdapter:
+    source_name: str
 
-| Dimension | Assumption | Implication |
+    async def search(self, query, location, filters, limit):
+        """Return normalized candidate company records."""
+
+    async def get_policy(self):
+        """Return configured source policy and usage constraints."""
+```
+
+Each adapter declares source type, terms/licence URL, permitted use, rate limit, attribution, retention restrictions, automated-access permission, commercial-reuse permission, policy review date, and enabled status.
+
+### Source priority
+
+1. User-provided company domains and files.
+2. Official open registries and compatible datasets.
+3. Company websites discovered through permitted sources.
+4. Directories with compatible reuse permissions.
+5. Search providers through permitted APIs/interfaces.
+
+Do not scrape search-result pages contrary to provider terms. Prefer official APIs, licensed providers, or compatible datasets.
+
+### Source evidence
+
+Store source ID, source record ID, URL, discovery query/project, retrieval time, policy version, raw evidence reference, parsed values, and licence metadata.
+
+## 11. Crawling system
+
+### Crawl strategy
+
+Use HTTPX first. Use Playwright only when JavaScript is required to expose relevant content and automated access is permitted.
+
+Candidate page order: homepage; contact pages and localized equivalents; about pages; company pages; team, leadership, and management pages; sales, procurement, and press pages; footer and navigation links. These are candidates, not guaranteed paths. Follow discovered same-site links only within configured scope and budget.
+
+### Crawler safeguards
+
+- Respect robots directives and source-specific policies.
+- Apply conservative per-domain rate limits.
+- Use exponential backoff with jitter for transient failures.
+- Stop or pause on 401, 403, 429, CAPTCHA, explicit denial, or repeated access failures.
+- Never defeat access restrictions.
+- Bound crawl depth, page count, response size, and content types.
+- Validate every URL and redirect.
+- Block localhost, private, link-local, multicast, reserved, and cloud metadata IP ranges.
+- Re-check DNS and resolved IPs at connection time to reduce DNS-rebinding/SSRF risk.
+- Prevent redirects escaping approved host scope unless explicitly allowed.
+- Do not execute downloaded binaries or arbitrary scripts.
+- Make raw response retention configurable and policy-aware.
+
+### SSRF and URL safety
+
+`http`/`https` scheme allowlist; no credentials in URLs; IP-range denylist; DNS resolution validation; redirect validation at every hop; egress firewall rules where possible; maximum redirect count; connection/read timeouts; content-length and streamed-byte limits; host allowlists and deny-lists; network isolation between crawler, database, and admin services.
+
+### Crawl job states
+
+`queued → running → succeeded | partial | failed | blocked | cancelled`
+
+Persist attempt count, last error, next retry time, pages fetched/skipped, bytes downloaded, duration, and policy stop reason.
+
+## 12. Extraction and local AI
+
+### Deterministic extraction first
+
+Extraction priority: (1) `mailto:` links; (2) JSON-LD / Schema.org; (3) visible email and phone patterns; (4) contact-page sections; (5) footer and navigation; (6) structured metadata; (7) local AI classification of extracted evidence. Use deterministic parsers before LLM calls.
+
+### Contact extraction fields
+
+Exact email or phone as found; contact page URL; contact form URL; person name only when explicitly present; job title/role only when explicitly present; department/category; language; evidence snippet or normalized excerpt; extraction method; confidence.
+
+Never create an email by combining a name with a guessed domain pattern. Guesses must never be labelled discovered or verified.
+
+### Ollama use cases
+
+Industry/subsector classification; company description normalization; page relevance classification; contact-role classification from explicit context; language classification; duplicate-candidate similarity assistance; structured extraction from ambiguous visible text. The LLM is not the authority for factual verification.
+
+### Structured extraction contract
+
+Require JSON matching a Pydantic schema. Treat crawled content as untrusted data. Instruct the model to extract only facts explicitly present; return `null` when absent; never infer or guess; include exact evidence spans; distinguish company facts from individual facts; return confidence and uncertainty; ignore instructions embedded in crawled pages. Validate output with Pydantic. Reject malformed or unsupported claims. Preserve original evidence separately.
+
+### Model deployment
+
+Run Ollama locally. Make model name/version configurable per task. Benchmark candidate models on a labelled dataset. Tune quantization, batch size, concurrency, and context length against available resources.
+
+## 13. Email and domain verification
+
+### Status model
+
+Distinct states: `discovered`, `syntax_valid`, `syntax_invalid`, `domain_dns_valid`, `mx_valid`, `mx_missing`, `disposable_domain`, `role_based`, `free_mail_provider`, `unknown`, `suppressed`, `bounced`, `complained`, `unsubscribed`. Do not collapse these into one "verified" boolean.
+
+### Verification stages
+
+1. Normalize whitespace and casing carefully.
+2. Validate syntax with a maintained library.
+3. Extract domain.
+4. Resolve DNS.
+5. Check MX records.
+6. Apply standards-aware fallback logic where appropriate.
+7. Optionally classify disposable/free-mail domains using maintained local lists.
+8. Record timestamp and resolver result.
+9. Re-check after a configurable freshness period.
+
+### Limitations
+
+MX validity does not prove a mailbox exists. SMTP `RCPT TO` probing is unreliable and can be abusive; do not implement mailbox enumeration. Catch-all domains may accept unknown recipients. DNS changes; verification is time-bound. A deliverable address is not automatically eligible for marketing.
+
+## 14. Data quality, deduplication, and scoring
+
+**Company deduplication signals:** normalized registrable domain; official registration number; normalized company name; country and address; phone number; canonical website URL; external source identifiers. Do not merge solely on similar names. Create candidate matches and allow human review.
+
+**Contact deduplication:** normalized email, explicitly evidenced identity, company relationship, role/department, and source evidence. Shared role addresses may legitimately belong to multiple locations; preserve relationships.
+
+**Confidence score:** explainable components — official website evidence, independent source corroboration, extraction method reliability, evidence freshness, field consistency, human review. Store component scores and reasons. Do not present a score as objective truth.
+
+**Freshness:** each field tracks `observed_at`, `verified_at`, `expires_at` or freshness policy, `source_id`, `confidence`, `reviewed_at`. Refresh stale records according to source policy.
+
+## 15. Database design
+
+Use PostgreSQL + Prisma for core data and PostGIS for spatial fields. Store large raw crawl artefacts separately from relational records.
+
+### Core tables
+
+- `users` — id, email, password_hash or auth identifier, name, role, created_at, updated_at
+- `discovery_projects` — id, name, description, status, created_by, geographic_mode, max_companies, max_pages_per_company, max_crawl_depth, min_confidence, settings_json, timestamps
+- `discovery_locations` — id, project_id, continent_id, country_id, region_id, city_id, postal_area_id, include_or_exclude, radius_km, geometry
+- `discovery_industry_filters` — id, project_id, industry_id, include_or_exclude, is_primary
+- `discovery_keywords` — id, project_id, keyword, keyword_type, include_or_exclude, language
+- `discovery_source_selections` — id, project_id, source_id, enabled, configuration_json
+- `companies` — id, canonical_name, normalized_name, description, website_url, registrable_domain, registration_number, legal_form, employee and revenue ranges, founded_year, status, primary_language, country_id, timestamps
+- `company_locations` — id, company_id, location_type, address fields, postal_code, city_id, region_id, country_id, latitude/longitude/geometry, is_headquarters, source_id, confidence
+- `company_industries` — id, company_id, industry_id, is_primary, confidence, classification_method, source_id
+- `contacts` — id, company_id, contact_type, email, normalized_email, phone, full_name, job_title, department, language, is_role_based, timestamps
+- `contact_evidence` — id, contact_id, source_id, source_url, evidence_text, extraction_method, confidence, observed_at
+- `sources` — id, name, source_type, base_url, terms_url, licence_name, permitted_use, rate_limit_json, policy_status, last_policy_review_at
+- `source_observations` — id, source_id, company_id, field_name, field_value, source_url, observed_at, raw_artifact_id, confidence
+- `crawl_jobs` — id, project_id, company_id, status, priority, attempt_count, started_at, finished_at, next_retry_at, error_code, error_message, metrics_json
+- `crawl_pages` — id, crawl_job_id, url, http_status, content_type, content_hash, fetched_at, duration_ms, bytes_received, parse_status, artifact_path
+- `email_verifications` — id, contact_id, syntax_status, dns_status, mx_status, provider_category, checked_at, expires_at, details_json
+- `suppressions` — id, email_normalized, domain, reason, source, created_at, expires_at, notes
+- `audit_logs` — id, actor_id, action, entity_type, entity_id, details_json, created_at
+
+### Campaign tables (later phase)
+
+`campaigns`, `campaign_recipients`, `delivery_events`, `sender_identities`, `consent_and_permission_records`.
+
+### Database rules
+
+Use foreign keys and appropriate unique constraints. Normalize emails into a canonical field. Index country, city, industry, domain, status, normalized email, and timestamps. Use PostGIS spatial indexes. Partition append-only event tables only when measured volume warrants it. Keep raw HTML out of large relational text columns; store compressed artefacts by reference. Encrypt secrets and sensitive configuration. Back up database and artefacts separately. Define deletion and retention policies.
+
+The physical schema lives in [`packages/database/prisma/schema.prisma`](../packages/database/prisma/schema.prisma); [`data-model.md`](./data-model.md) maps these logical tables onto it.
+
+## 16. API design
+
+Versioned REST endpoints. Long-running operations return a job ID.
+
+**Discovery projects:** `POST/GET /api/v1/discovery-projects`; `GET/PATCH/DELETE /api/v1/discovery-projects/:id`; `POST …/:id/preview`, `…/start`, `…/pause`, `…/resume`, `…/cancel`; `GET …/:id/progress`, `…/results`.
+
+**Companies and contacts:** `GET/POST /api/v1/companies`; `GET/PATCH /api/v1/companies/:id`; `GET …/:id/contacts`, `…/:id/evidence`; `POST …/:id/crawl`; `GET /api/v1/contacts`; `GET/PATCH /api/v1/contacts/:id`; `POST …/:id/verify`, `…/:id/suppress`; `GET …/:id/evidence`.
+
+**Geography and taxonomy:** `GET /api/v1/geography/{continents,countries,regions,cities}`; `GET /api/v1/industries`; `GET /api/v1/industries/:id/children`.
+
+**Operations:** `GET /api/v1/jobs`; `GET /api/v1/jobs/:id`; `POST /api/v1/jobs/:id/retry`; `GET /api/v1/sources`; `PATCH /api/v1/sources/:id`; `GET /api/v1/audit-logs`.
+
+**Campaigns (later):** create, eligibility-check, submit-for-approval, approve, send-test, schedule, pause; `POST /api/v1/unsubscribe`.
+
+All list endpoints need pagination, sorting, validated filters, and safe query limits.
+
+## 17. Queue and worker architecture
+
+Redis + BullMQ for TypeScript orchestration. Python workers consume a compatible queue or receive jobs through a small internal service.
+
+Queues: `discovery`, `source_search`, `company_normalization`, `crawl`, `extract`, `classify`, `verify`, `deduplicate`, `export`, `refresh`, `campaign_eligibility` (later), `email_delivery` (later).
+
+Reliability: jobs are idempotent; stable job IDs prevent duplicates; retries are bounded with exponential backoff; transient errors are separated from permanent policy blocks; exhausted jobs are dead-lettered; cancellation and project pause are supported; per-domain and global concurrency are enforced; PostgreSQL is the system of record, Redis is not; a policy denial is never retried as a network error.
+
+## 18. Security and privacy
+
+**Application security:** authentication and role-based authorization; strong password hashing or a trusted self-hosted identity provider; CSRF protections; strict input validation and rate limiting; secure session cookies; secrets in environment variables or a secrets manager; restricted admin endpoints; patched dependencies; audited privileged actions; encrypted backups.
+
+**Crawler security:** SSRF protections; egress network restrictions; crawled content treated as untrusted; page instructions never followed as commands; HTML sanitized before rendering; no unnecessary personal data stored.
+
+**Privacy and retention:** define purpose and lawful basis before processing personal contact data; minimize personal data; separate corporate role accounts from identifiable individuals; record source and collection date; define retention and deletion workflows; handle access, correction, objection, and deletion requests; keep suppression data so opted-out addresses are not re-imported and contacted again; restrict access to personal contact information; document processing activities and source relationships.
+
+## 19. Compliance architecture
+
+This is an engineering framework, not legal advice. Obtain jurisdiction-specific legal review before campaigns.
+
+Three separate questions: (1) may LeadForge access and reuse this source data; (2) may LeadForge process this personal data for the stated purpose; (3) may the operator send this marketing message to this recipient. A yes to one does not imply a yes to another.
+
+Recipient categories: generic corporate role address; named employee at a company; sole trader / individual business owner; consumer / private individual; unknown. Do not assume all business-domain addresses are corporate recipients or that all B2B marketing is exempt from consent rules.
+
+Jurisdiction profiles are configurable and versioned, built only after review by qualified counsel.
+
+Eligibility outcomes: `eligible_pending_human_approval`, `ineligible`, `requires_legal_review`, `insufficient_information`. Default to not eligible when required information is missing.
+
+Suppression is checked during import, contact creation, segment building, campaign approval, and immediately before sending.
+
+## 20. SMTP and deliverability (later phase)
+
+Self-hosted SMTP is operationally demanding; a residential connection is unsuitable for bulk business email. Required: Postfix, DKIM signing, SPF, staged DMARC, valid PTR, TLS, stable HELO, bounce mailbox and parser, complaint handling, unsubscribe (including one-click where required), and monitoring. Send only to recipients passing eligibility, with rate limits, sender identity and clear opt-out. Do not deploy bulk sending until eligibility, suppression, bounce processing, and approval are complete.
+
+## 21. Frontend experience
+
+**Market Explorer:** geographic map; continent/country/region/city browser; industry tree; search filters; result count and map/list toggle; saved filters; "Create discovery project from this selection". Use MapLibre GL JS with a compliant tile source; do not assume public OSM tile servers support a commercial application.
+
+**New discovery project wizard:** (1) project details; (2) geography; (3) industry; (4) company profile; (5) contacts; (6) sources; (7) quality and exclusions; (8) review; (9) run.
+
+**Results workspace:** company columns — company, city/country, industry, website, size estimate, contact count, evidence count, confidence, last observed, review status. Contact columns — email/phone, category, company, source, syntax status, MX status, confidence, last observed, suppression status. Saved views, bulk tagging, CSV export, review queues. Bulk campaign selection must not imply eligibility.
+
+## 22. Performance and scaling
+
+Design for 100,000 records first, with a path to one million: async HTTP crawling with bounded concurrency; sparing Playwright; cached DNS and robots results; deduplicate before crawling; avoid recrawling fresh pages; batch upserts; Polars/DuckDB for offline analysis; OpenSearch only on measured need; partitioning only when justified; separate crawler and database resource limits; monitor GPU memory and LLM queue depth.
+
+Metrics: requests/minute and per domain; HTTP status distribution; crawl latency and pages/company; bytes downloaded; extraction yield and contacts/100 companies; duplicate rate; AI throughput and queue wait; DB query latency; queue age and retry rate; storage growth and export duration.
+
+## 23. Docker Compose deployment
+
+Services: `app`/`web` (Next.js), `postgres` (PostGIS), `redis`, `crawler` (Python), `ollama`, optional `minio`, optional `prometheus` and `grafana`. Do not expose PostgreSQL, Redis, Ollama, or internal worker ports publicly. Use persistent volumes and health checks. Pin image versions for production.
+
+## 24–25. Development setup and Compose baseline
+
+See [`deployment.md`](./deployment.md) and the repository `docker-compose.yml`. Use a real policy/contact URL and truthful user-agent before crawling. Do not impersonate another organization.
+
+## 26. Testing strategy
+
+**Unit:** URL normalization and domain extraction; email syntax and phone normalization; industry mapping and geography hierarchy; confidence scoring; suppression matching and eligibility rules; deduplication.
+
+**Integration:** migrations and PostGIS queries; queue processing; crawl-to-extraction pipeline; Ollama structured-output validation; artefact storage; CSV import/export; source policy enforcement.
+
+**Security:** SSRF and DNS-rebinding; redirect-to-private-IP; oversized responses and malformed HTML; XSS in extracted text; unauthorized API access; secret leakage in logs; queue replay and idempotency.
+
+**Quality evaluation dataset:** manually labelled across countries, sectors, languages, and website types. Measure discovery precision, dedup precision/recall, email and phone extraction precision, industry and role classification accuracy, evidence-span correctness, and false-positive rate. Prioritize contact-extraction precision over recall.
+
+## 27. Implementation roadmap
+
+| Phase | Weeks | Exit |
 | --- | --- | --- |
-| Pages/day (dev host) | 20k–50k | 1–2 crawl workers; 10 concurrent domains |
-| Avg page | 120 KB | 2.4–6 GB/day raw; ~3x compression in MinIO → < 2 GB/day |
-| Raw retention | 90 days | ~150–250 GB MinIO; extract JSON kept forever |
-| Contacts | 1M | ~2–5 GB core tables; 20–60 GB with evidence |
-| DB size | 100–300 GB at 1M w/ 90d evidence | partition + autovacuum tuning; 32 GB RAM comfortable |
-| Verification | 50 emails/s cached DNS | batch + cache; Polars for bulk passes |
-| Search | Postgres FTS first | OpenSearch only when FTS p95 > 200ms or > 5M docs |
+| 0 — Product and policy foundation | 1 | Approved scope, source checklist, schema draft, test dataset |
+| 1 — Infrastructure and application shell | 2–3 | Authenticated app, migrations, queue connectivity, repeatable local startup |
+| 2 — Geography and industry foundation | 4–5 | User can select geography and industry and save filters |
+| 3 — Discovery project builder | 6–7 | Projects can be saved, previewed, started, paused, and cancelled |
+| 4 — Company discovery and adapters | 8–10 | Project produces deduplicated company candidates with evidence |
+| 5 — Website crawling and extraction | 11–13 | Permitted websites are crawled and evidence-backed data is extracted |
+| 6 — Local AI and data quality | 14–15 | AI outputs are schema-valid, evidence-grounded, measured, and reviewable |
+| 7 — Verification, search, and exports | 16–17 | Users can search, filter, review, verify, and export records with provenance |
+| 8 — Hardening and release | 18–20 | Reliable self-hosted discovery with monitoring, backups, policy controls, and documentation |
+| 9 — Campaign capability | separate release | Only after legal review and completion of required controls |
 
-Query discipline: cursor pagination everywhere; covering indexes for list screens; `COPY`/batch upsert for imports; no N+1 (Prisma `select` discipline reviewed in code review); `EXPLAIN` budget on the five hot queries.
+## 28. MVP definition
 
----
+1. Login and admin role. 2. Geography selection: city, country, continent. 3. Industry and subsector selection. 4. Company size and website filters. 5. Discovery project wizard. 6. User-provided domain import. 7. One permitted company discovery source. 8. HTTPX website crawler with policy controls. 9. Company/contact extraction. 10. PostgreSQL storage with provenance. 11. Email syntax and MX checks. 12. Company/contact search and filtering. 13. CSV export. 14. Suppression list. 15. Audit log and job monitoring.
 
-## 15. Observability and SLOs
+Leave SMTP sending and broad multi-source discovery for later.
 
-- **Metrics**: pages fetched, fetch success rate by status class, extraction yield/page, candidates promoted, verification pass rate, queue depth/lag, DLQ size, review backlog age, eligibility block reasons, send/bounce/complaint rates.
-- **Traces**: one trace per crawl target and per extraction run; OpenTelemetry, local Grafana + Prometheus + Loki in `infrastructure/monitoring`.
-- **Logs**: structured JSON, correlation id threaded web → API → stream → worker.
-- **SLOs (internal)**: API p95 < 300ms; crawl worker success > 90% (excluding intentional blocks); replay of 1k pages < 5 min; zero cross-org leakage; zero sends to suppressed addresses.
+## 29. Definition of done
 
----
+A feature is complete only when it has automated tests; validates user input; records source evidence where relevant; has failure and retry behaviour; is observable through logs/metrics; respects source policies; handles duplicate and stale data; has documented operational behaviour; does not expose secrets or internal services; and has a migration and rollback strategy when schema changes.
 
-## 16. Quality gates
+A discovery project is complete when jobs reach terminal states, results are persisted, errors and policy stops are visible, and evidence can be inspected.
 
-Each phase exits only when the gates in [`quality-gates.md`](./quality-gates.md) pass. Highlights:
+## 30–32. Backlog, decisions, build sequence
 
-- **Golden set**: 500 hand-labeled pages (emails, companies, false positives) with precision/recall floor per extractor version.
-- **Adversarial fixtures**: JS-obfuscated emails, URL-encoded mailto, `logo@2x.png`, third-party widget addresses, redirect-to-localhost, 429 storm, catch-all domains, unicode homoglyphs.
-- **Compliance tests**: unknown country blocks, stale decision blocks, suppressed always blocks, re-import re-suppresses.
-- **Security tests**: cross-org access denied on every resource; SSRF suite; CSV injection; webhook signature.
-- **Restore drill**: documented RTO/RPO; database restore verified each phase.
+The backlog is tracked in [`backlog.md`](./backlog.md). Key architectural decisions: company-first discovery; modular monolith first; Python crawler workers; Next.js + Prisma + PostgreSQL; PostGIS; Redis queue; Ollama local AI; deterministic extraction before AI; evidence provenance; verification separate from deliverability; discovery separate from marketing eligibility; policy-aware adapters.
 
----
-
-## 17. Roadmap
-
-Condensed; details and exit criteria in [`roadmap.md`](./roadmap.md).
-
-| Phase | Weeks | Outcome | Hard gate |
-| --- | --- | --- | --- |
-| 0 · Spike | 1–2 | 50 domains → evidence-backed records; yield measured | Is yield ≥ 15 usable contacts / 50 companies? |
-| 1 · Foundation | 3–4 | monorepo, Docker, Postgres, Prisma, auth, RLS | cross-org tests green |
-| 2 · CRM | 5–6 | companies, contacts, domains, CSV import | 100k-row import < 10 min |
-| 3 · Sources + discovery | 7–8 | registry, policy gate, projects, queue | no target without approved source |
-| 4 · Crawler | 9–10 | safe fetch, robots, SSRF suite, artifacts | SSRF + robots suite green |
-| 5 · Extraction | 11–12 | deterministic extractors, evidence, replay | golden-set precision ≥ 90% |
-| 6 · Verification | 13 | syntax/DNS/MX, statuses, freshness | no SMTP probing in codebase |
-| 7 · Compliance | 14–15 | profiles, eligibility API, suppression | default-deny matrix passes |
-| 8 · Campaign drafts | 16–17 | builder, preview, approval | blocked recipients cannot be queued |
-| 9 · SMTP (gated) | 18–20 | Postfix, DKIM, bounce, unsubscribe | seed-inbox pass + auth proof |
-| 10 · Hardening | 21–24 | scale tests, monitoring, backup, pen-test | restore drill + load test |
-
----
-
-## 18. Metrics
-
-**North star:** *verified, evidence-backed, eligible contacts delivered per operator-hour.*
-
-Supporting: extraction precision/recall, discovery yield per source, review throughput (records/min), time-to-first-lead, staleness ratio, eligibility block rate, bounce/complaint rates, cost per 1k contacts (infra only), crawl success rate, dedupe rate.
-
----
-
-## 19. Risks and kill criteria
-
-| Risk | Likelihood | Impact | Mitigation | Kill criterion |
-| --- | --- | --- | --- | --- |
-| Extraction yield too low | Medium | Fatal | Phase 0 measurement; multiple source classes | < 5 usable per 50 companies → re-scope |
-| Source access revoked / blocked | High | High | Source diversity, policy registry, no evasion | > 50% of sources blocked → pivot sourcing |
-| Deliverability failure | High | High | Warmup, provider abstraction, honest gating | Reputation unrecoverable after 3 attempts → ESP-only mode |
-| Legal exposure | Medium | Fatal | Default-deny, counsel review, jurisdiction profiles | Counsel says model unlawful in target market → restrict scope |
-| Scope creep | High | High | Scope ladder, gates, "never" list | Phase slips > 4 weeks → cut scope, not quality |
-| Data quality distrust | Medium | High | Provenance, confidence, review | Users ignore records → rebuild trust surfaces |
-| Single-developer bus factor | Certain | High | Docs, ADRs, runbooks, boring tech | — |
-| LLM cost/latency | Low (local) | Low | Classification only, fallbacks | — |
-
----
-
-## 20. Cost model (self-hosted, monthly, approximate)
-
-| Item | Dev workstation | Production (1M contacts) |
-| --- | --- | --- |
-| Compute | existing RTX 4090 box | 1 app node (8c/32GB) + 1 worker node (16c/64GB) |
-| Storage | 1 TB NVMe | 2 TB NVMe + object storage |
-| Mail server | none | small VPS w/ static IP + PTR + port 25 (~€10–20) |
-| Backups | local | offsite object storage (~€10–30) |
-| Software | €0 (all OSS) | €0 + optional ESP relay |
-
-No per-seat, per-credit, or per-record costs. The honest trade: you pay in engineering time and operational attention instead of subscription fees.
-
----
-
-## 21. Legal and ethical posture
-
-- Only publicly accessible pages; honor robots and terms; no login-protected content.
-- Personal data processed under documented bases, minimized, retained on a schedule, and erasable.
-- Marketing only with a jurisdiction-appropriate basis; unsubscribe honored immediately and permanently.
-- Data-subject requests supported by an internal workflow (access, erasure, objection) even in v1 (manual + audited).
-- All jurisdiction profiles ship as `DRAFT` and require explicit human sign-off before enabling real sending.
-
----
-
-## 22. Open questions
-
-Tracked in [`open-questions.md`](./open-questions.md). Blocking decisions for Phase 1:
-
-1. Primary operating jurisdiction and target markets (drives profile priority).
-2. Is v1 single-org or multi-tenant? (plan assumes single-org, schema org-scoped)
-3. Sending identity: which domain/subdomain, who owns PTR?
-4. Is a public sector/registry dataset integration (e.g. Bolagsverket, Companies House) in scope for v1? (recommended: yes, Phase 6)
-5. Acceptable monthly infra budget.
-6. Does the operator want MCP/agent access in v1 or v2?
-
----
-
-## 23. Immediate next actions
-
-1. Approve this plan and phase gates.
-2. Scaffold `apps/web` (Next.js) and `packages/database` (Prisma) per Phase 1.
-3. Write SSRF guard + URL validator as the first shared security library (before any crawler code).
-4. Build the Phase 0 spike harness in `services/crawler` + `services/extractor` (CLI, no UI).
-5. Build the 500-page golden set labeling sheet with 50 seed domains.
-6. Draft jurisdiction profiles for the top 3 target countries; mark DRAFT.
-7. Stand up `docker-compose` with Postgres + Redis and health checks.
-8. Open the Phase 1 issue set from `backlog.md`.
+**Core product decision:** LeadForge is a high-quality, geographically targeted company-intelligence system first — not an email blaster. Its value comes from precise targeting, traceable evidence, clean company records, useful filters, and trustworthy contact data.

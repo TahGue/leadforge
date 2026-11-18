@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@leadforge/database";
 import { ApiError, candidateDecision, normalizeEmail, parseBody } from "@leadforge/shared";
 import { isDisposableDomain, isFreeProvider, isRoleAccount } from "@leadforge/shared";
-import { json, withAuth } from "@/lib/api";
+import { actorUserId, json, withAuth } from "@/lib/api";
 import { audit, emit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export const POST = withAuth<{ id: string }>(async (request, session, params) =>
       where: { id: candidate.id },
       data: {
         status: "REJECTED",
-        reviewedBy: session.user.id,
+        reviewedBy: actorUserId(session),
         reviewedAt: new Date(),
         rejectReason: input.reason ?? "manual rejection",
       },
@@ -46,6 +46,68 @@ export const POST = withAuth<{ id: string }>(async (request, session, params) =>
       "VALIDATION_ERROR",
       "Candidate is not linked to a company; create the company first",
     );
+  }
+
+  if (candidate.kind === "PHONE" || candidate.kind === "CONTACT_FORM") {
+    const category = candidate.category ?? "GENERAL";
+    const promoted = await prisma.$transaction(async (tx) => {
+      let contact = await tx.contact.findFirst({
+        where: {
+          organizationId: session.organization.id,
+          companyId: candidate.companyId!,
+          type: "GENERIC_BUSINESS",
+          category,
+          deletedAt: null,
+        },
+      });
+      const fields =
+        candidate.kind === "PHONE"
+          ? { phoneRaw: candidate.rawValue, phoneE164: candidate.normalizedValue }
+          : { contactFormUrl: candidate.normalizedValue };
+      contact = contact
+        ? await tx.contact.update({ where: { id: contact.id }, data: { ...fields, reviewedAt: new Date() } })
+        : await tx.contact.create({
+            data: {
+              organizationId: session.organization.id,
+              companyId: candidate.companyId!,
+              type: "GENERIC_BUSINESS",
+              category,
+              isRoleBased: true,
+              sourceUrl: candidate.pageUrl ?? candidate.artifact.url,
+              confidence: candidate.confidence,
+              reviewedAt: new Date(),
+              ...fields,
+            },
+          });
+      await tx.sourceEvidence.create({
+        data: {
+          organizationId: session.organization.id,
+          companyId: candidate.companyId!,
+          contactId: contact.id,
+          fetchArtifactId: candidate.fetchArtifactId,
+          pageUrl: candidate.pageUrl ?? candidate.artifact.url,
+          fieldName: candidate.kind === "PHONE" ? "phone" : "contact_form_url",
+          extractedValue: candidate.normalizedValue,
+          extractorVersion: candidate.method,
+          method: candidate.method,
+          snippet: candidate.snippet,
+          contentHash: candidate.artifact.bodySha256,
+        },
+      });
+      return tx.extractionCandidate.update({
+        where: { id: candidate.id },
+        data: { status: "PROMOTED", reviewedBy: actorUserId(session), reviewedAt: new Date(), promotedContactId: contact.id },
+      });
+    });
+    await audit({
+      organizationId: session.organization.id,
+      actorId: session.user.id,
+      action: "candidate.promote",
+      entity: "ExtractionCandidate",
+      entityId: candidate.id,
+      metadata: { kind: candidate.kind },
+    });
+    return json({ data: { candidate: promoted } });
   }
 
   const normalized = normalizeEmail(candidate.rawValue);
@@ -74,6 +136,8 @@ export const POST = withAuth<{ id: string }>(async (request, session, params) =>
         organizationId: session.organization.id,
         companyId: candidate.companyId!,
         type: roleAccount ? "GENERIC_BUSINESS" : "PERSON",
+        ...(candidate.category ? { category: candidate.category } : {}),
+        deletedAt: null,
       },
     });
 
@@ -83,7 +147,13 @@ export const POST = withAuth<{ id: string }>(async (request, session, params) =>
           organizationId: session.organization.id,
           companyId: candidate.companyId!,
           type: roleAccount ? "GENERIC_BUSINESS" : "PERSON",
+          category: candidate.category ?? (roleAccount ? "GENERAL" : "NAMED"),
+          isRoleBased: roleAccount,
+          fullName: roleAccount ? null : candidate.personName,
+          jobTitle: roleAccount ? null : candidate.jobTitle,
+          sourceUrl: candidate.pageUrl ?? candidate.artifact.url,
           confidence: candidate.confidence,
+          reviewedAt: new Date(),
         },
       });
     }
@@ -115,7 +185,7 @@ export const POST = withAuth<{ id: string }>(async (request, session, params) =>
       where: { id: candidate.id },
       data: {
         status: "PROMOTED",
-        reviewedBy: session.user.id,
+        reviewedBy: actorUserId(session),
         reviewedAt: new Date(),
         normalizedValue: normalized.normalized,
         promotedEmailId: email.id,
