@@ -70,13 +70,14 @@ jobs:
 
       - name: Pytest
         run: |
-          uv run pytest
-          code=$?
-          if [ $code -eq 5 ]; then
+          # exit code 5 means "no tests collected" — expected until Phase 0/1 adds code
+          code=0
+          uv run pytest || code=$?
+          if [ "$code" -eq 5 ]; then
             echo "No tests yet — expected until Phase 1."
             exit 0
           fi
-          exit $code
+          exit "$code"
 
   compose:
     name: Compose — config validity
