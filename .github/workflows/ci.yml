@@ -21,7 +21,7 @@ env:
 
 jobs:
   node:
-    name: Node â€” typecheck, build, integration
+    name: Node Ã¢â‚¬â€ typecheck, build, integration
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -70,11 +70,14 @@ jobs:
       - name: API integration tests
         run: pnpm --filter @leadforge/web test
 
+      - name: Worker integration tests
+        run: pnpm --filter @leadforge/worker test
+
       - name: Build
         run: pnpm --filter @leadforge/web build
 
   python:
-    name: Python â€” lint, types, tests
+    name: Python Ã¢â‚¬â€ lint, types, tests
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -120,7 +123,7 @@ jobs:
         run: uv run pytest
 
   compose:
-    name: Compose â€” config validity
+    name: Compose Ã¢â‚¬â€ config validity
     runs-on: ubuntu-latest
     env:
       POSTGRES_PASSWORD: ci-password
@@ -129,6 +132,21 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate
         run: docker compose config -q
+
+  docker:
+    name: Docker — build deployable images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build web image
+        run: docker build -f apps/web/Dockerfile -t leadforge-web:ci .
+
+      - name: Build worker image
+        run: docker build -f apps/worker/Dockerfile -t leadforge-worker:ci .
+
+      - name: Build crawler image
+        run: docker build -f services/Dockerfile -t leadforge-crawler:ci .
 
   secrets:
     name: Secret scan

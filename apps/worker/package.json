@@ -11,6 +11,7 @@
     "test": "vitest run --pool=threads --passWithNoTests"
   },
   "dependencies": {
+    "@leadforge/compliance": "workspace:*",
     "@leadforge/database": "workspace:*",
     "@leadforge/shared": "workspace:*",
     "@prisma/client": "6.19.3",

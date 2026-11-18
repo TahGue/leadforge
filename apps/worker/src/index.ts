@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import nodemailer from "nodemailer";
-import { evaluateForCampaign, prisma } from "@leadforge/database";
+import { evaluateForCampaign, prisma, type Prisma } from "@leadforge/database";
 
 const here = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(here, "../../../.env") });
@@ -47,7 +47,7 @@ function unsubscribeUrl(emailNormalized: string, campaignId: string): string {
 }
 
 function footer(url: string): string {
-  return `<hr /><p style="font-size:12px;color:#666">You received this business email because your role is relevant to ${FROM_NAME}.<br />${FROM_NAME}${POSTAL ? ` Ãƒâ€šÃ‚Â· ${POSTAL}` : ""}<br /><a href="${url}">Unsubscribe</a></p>`;
+  return `<hr /><p style="font-size:12px;color:#666">You received this business email because your role is relevant to ${FROM_NAME}.<br />${FROM_NAME}${POSTAL ? ` ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${POSTAL}` : ""}<br /><a href="${url}">Unsubscribe</a></p>`;
 }
 
 async function sendOne(input: {
@@ -147,17 +147,7 @@ async function processCampaign(campaignId: string): Promise<void> {
         campaignId,
       });
 
-      await prisma.$transaction([
-        prisma.campaignSend.create({
-          data: {
-            campaignId,
-            recipientId: recipient.id,
-            attempt: 1,
-            provider: "smtp",
-            providerMessageId: outcome.sent ? outcome.messageId : null,
-            smtpResponse: outcome.sent ? outcome.response : undefined,
-          },
-        }),
+      const operations: Prisma.PrismaPromise<unknown>[] = [
         prisma.campaignRecipient.update({
           where: { id: recipient.id },
           data: outcome.sent
@@ -174,7 +164,26 @@ async function processCampaign(campaignId: string): Promise<void> {
             metadata: { reason: outcome.sent ? null : outcome.reason },
           },
         }),
-      ]);
+      ];
+
+      // Only a real delivery attempt counts as a send. Test-mode refusals are
+      // recorded as events so the campaign still reports an honest state.
+      if (outcome.sent) {
+        operations.push(
+          prisma.campaignSend.create({
+            data: {
+              campaignId,
+              recipientId: recipient.id,
+              attempt: 1,
+              provider: "smtp",
+              providerMessageId: outcome.messageId,
+              smtpResponse: outcome.response,
+            },
+          }),
+        );
+      }
+
+      await prisma.$transaction(operations);
     } catch (error) {
       await prisma.$transaction([
         prisma.campaignRecipient.update({
