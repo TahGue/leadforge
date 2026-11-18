@@ -19,7 +19,7 @@ const appDir = join(root, "apps", "web");
 
 const databaseUrl =
   process.env.DATABASE_URL ??
-  "postgresql://leadforge:leadforge_local@127.0.0.1:5432/leadforge?schema=public&pgbouncer=true&connection_limit=1";
+  "postgresql://leadforge:leadforge_local@127.0.0.1:5432/leadforge?schema=public";
 
 const env = {
   ...process.env,

@@ -1,40 +1,74 @@
 #!/usr/bin/env node
 /**
- * Local PostgreSQL-compatible server for environments without Docker.
+ * Local PostgreSQL for workstations without Docker.
  *
- * Runs PGlite (Postgres compiled to WASM) and exposes it over the Postgres
- * wire protocol on 127.0.0.1:5432, so Prisma and the Python workers connect
- * exactly as they would to a real server.
+ * Runs real PostgreSQL binaries (via embedded-postgres) on 127.0.0.1:5432 with
+ * the database and role the app expects. Unlike a WASM shim, this supports
+ * prepared statements and long-lived Prisma connections, so the app behaves the
+ * same as it does against the production container.
  *
- * This is a development convenience only. Production uses the postgres
- * container in docker-compose.yml.
+ * Production uses the postgres service in docker-compose.yml.
  *
  * Usage: node scripts/dev-db.mjs [port]
  */
-import { PGlite } from "@electric-sql/pglite";
-import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
-import { mkdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
+import EmbeddedPostgres from "embedded-postgres";
+import pg from "pg";
 
 const port = Number(process.argv[2] ?? 5432);
-const dataDir = join(process.cwd(), ".pgdata");
-mkdirSync(dataDir, { recursive: true });
+const databaseDir = join(process.cwd(), ".pgdata");
+const user = process.env.POSTGRES_USER ?? "leadforge";
+const password = process.env.POSTGRES_PASSWORD ?? "leadforge_local";
+const database = process.env.POSTGRES_DB ?? "leadforge";
 
-const db = await PGlite.create({ dataDir });
-const server = new PGLiteSocketServer({ db, host: "127.0.0.1", port });
+const fresh = !existsSync(join(databaseDir, "PG_VERSION"));
 
-await server.start();
-console.log(`leadforge dev db listening on 127.0.0.1:${port} (data: ${dataDir})`);
+const instance = new EmbeddedPostgres({
+  databaseDir,
+  user,
+  password,
+  port,
+  persistent: true,
+});
 
-let closing = false;
+if (fresh) {
+  console.log(`initialising PostgreSQL cluster in ${databaseDir}`);
+  await instance.initialise();
+}
+
+await instance.start();
+
+try {
+  await instance.createDatabase(database);
+  console.log(`created database ${database}`);
+} catch (error) {
+  if (!/already exists/i.test(String(error?.message ?? error))) throw error;
+}
+
+// Prove the app's connection string works before declaring readiness.
+const client = new pg.Client({
+  host: "127.0.0.1",
+  port,
+  user,
+  password,
+  database,
+});
+await client.connect();
+const { rows } = await client.query("select version()");
+await client.end();
+
+console.log(`leadforge dev db ready on 127.0.0.1:${port}`);
+console.log(`  ${rows[0].version.split(",")[0]}`);
+
+let stopping = false;
 async function shutdown() {
-  if (closing) return;
-  closing = true;
+  if (stopping) return;
+  stopping = true;
   console.log("\nstopping dev db...");
   try {
-    await server.stop();
+    await instance.stop();
   } finally {
-    await db.close();
     process.exit(0);
   }
 }

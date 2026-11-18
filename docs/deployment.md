@@ -194,13 +194,16 @@ The schema is forward-only; migrations use expand/contract for breaking changes.
 Docker may be unavailable on some workstations. Two options:
 
 1. Install PostgreSQL and Redis natively, set `DATABASE_URL`, run `pnpm db:deploy && pnpm db:seed`.
-2. Use the bundled PGlite harness:
+2. Use the bundled PostgreSQL harness (real PostgreSQL binaries, no Docker):
 
 ```bash
-node scripts/dev-db.mjs          # Postgres wire protocol on 127.0.0.1:5432
-node scripts/db-apply.mjs        # apply migrations without the Prisma engine
+node scripts/run-local.mjs   # database + migrations + production build on :3000
+# or, step by step:
+node scripts/dev-db.mjs      # PostgreSQL 17 on 127.0.0.1:5432
+node scripts/db-apply.mjs    # apply migrations
 pnpm --filter @leadforge/database seed
 pnpm dev
 ```
 
-Add `?pgbouncer=true&connection_limit=1` to `DATABASE_URL` when using PGlite: it speaks the wire protocol but does not support Prisma's prepared-statement reuse. Never use that DSN in production.
+The harness stores its cluster in `.pgdata/` and uses the credentials from `.env`.
+It exists for workstations only; production always uses the `postgres` container.

@@ -97,8 +97,8 @@ uv run python -m leadforge.worker   # crawl/extract
 pnpm worker                         # campaign sends
 ```
 
-> The bundled `dev-db.mjs` is a PGlite server for workstations without Docker. It requires
-> `?pgbouncer=true&connection_limit=1` on `DATABASE_URL` (already in `.env.example`).
+> `dev-db.mjs` runs real PostgreSQL binaries (embedded-postgres) on port 5432 for
+> workstations without Docker, so the app behaves exactly as it does in production.
 
 ---
 

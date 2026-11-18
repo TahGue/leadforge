@@ -3,7 +3,7 @@ import { PrismaClient } from "@prisma/client";
 
 const url =
   process.env.DATABASE_URL ??
-  "postgresql://leadforge:leadforge_local@127.0.0.1:5432/leadforge?schema=public&pgbouncer=true&connection_limit=1&connection_limit=1";
+  "postgresql://leadforge:leadforge_local@127.0.0.1:5432/leadforge?schema=public&connection_limit=1";
 
 try {
   const client = new pg.Client({ connectionString: url });
