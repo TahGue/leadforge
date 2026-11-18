@@ -47,7 +47,7 @@ function unsubscribeUrl(emailNormalized: string, campaignId: string): string {
 }
 
 function footer(url: string): string {
-  return `<hr /><p style="font-size:12px;color:#666">You received this business email because your role is relevant to ${FROM_NAME}.<br />${FROM_NAME}${POSTAL ? ` ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· ${POSTAL}` : ""}<br /><a href="${url}">Unsubscribe</a></p>`;
+  return `<hr /><p style="font-size:12px;color:#666">You received this business email because your role is relevant to ${FROM_NAME}.<br />${FROM_NAME}${POSTAL ? ` - ${POSTAL}` : ""}<br /><a href="${url}">Unsubscribe</a></p>`;
 }
 
 async function sendOne(input: {

@@ -222,9 +222,9 @@ Format: **Status** Â· **Context** Â· **Decision** Â· **Consequences**.
 
 ---
 
-## ADR-0019 — Postgres `SKIP LOCKED` queue for v1 (supersedes Redis Streams for commands)
+## ADR-0019 - Postgres `SKIP LOCKED` queue for v1 (supersedes Redis Streams for commands)
 
-**Status:** Accepted (2026-11-18) · supersedes the transport choice in ADR-0003
+**Status:** Accepted (2026-11-18) - supersedes the transport choice in ADR-0003
 
 **Context:** The first deployable version needs one durable queue that both TypeScript and Python can use without a second broker. Redis was in the original design, but it adds a failure domain and a second consistency story for a single-operator deployment.
 

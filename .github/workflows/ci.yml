@@ -21,7 +21,7 @@ env:
 
 jobs:
   node:
-    name: Node Ã¢â‚¬â€ typecheck, build, integration
+    name: Node - typecheck, build, integration
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -53,18 +53,18 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Generate Prisma client
-        run: pnpm --filter @leadforge/database generate
+        run: pnpm --filter @leadforge/database run generate
 
       - name: Apply migrations
         run: pnpm --filter @leadforge/database run deploy
 
       - name: Seed
-        run: pnpm --filter @leadforge/database seed
+        run: pnpm --filter @leadforge/database run seed
 
       - name: Typecheck
         run: pnpm -r --if-present typecheck
 
-      - name: Unit tests (compliance)
+      - name: Compliance unit tests
         run: pnpm --filter @leadforge/compliance test
 
       - name: API integration tests
@@ -77,7 +77,7 @@ jobs:
         run: pnpm --filter @leadforge/web build
 
   python:
-    name: Python Ã¢â‚¬â€ lint, types, tests
+    name: Python - lint, types, tests
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -123,7 +123,7 @@ jobs:
         run: uv run pytest
 
   compose:
-    name: Compose Ã¢â‚¬â€ config validity
+    name: Compose - config validity
     runs-on: ubuntu-latest
     env:
       POSTGRES_PASSWORD: ci-password
@@ -134,7 +134,7 @@ jobs:
         run: docker compose config -q
 
   docker:
-    name: Docker — build deployable images
+    name: Docker - build images
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -53,7 +53,7 @@ export default async function SettingsPage() {
                     </span>
                   </td>
                   <td className="text-xs muted">
-                    {approval?.approvedAt ? approval.approvedAt.toISOString().slice(0, 10) : "â€”"}
+                    {approval?.approvedAt ? approval.approvedAt.toISOString().slice(0, 10) : "—"}
                   </td>
                   <td>
                     {approval ? null : (
