@@ -61,7 +61,12 @@ jobs:
         run: uv run ruff check .
 
       - name: Mypy
-        run: uv run mypy services
+        run: |
+          if find services -name '*.py' -print -quit | grep -q .; then
+            uv run mypy services
+          else
+            echo "No Python sources yet — expected until Phase 0."
+          fi
 
       - name: Pytest
         run: |
