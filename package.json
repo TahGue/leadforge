@@ -20,6 +20,7 @@
     "db:seed": "pnpm --filter @leadforge/database run seed",
     "db:studio": "pnpm --filter @leadforge/database studio",
     "worker": "pnpm --filter @leadforge/worker start",
+    "local": "node scripts/run-local.mjs",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
     "infra:logs": "docker compose logs -f --tail=100",

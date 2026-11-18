@@ -2,7 +2,6 @@ import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
   turbopack: { root: path.resolve(process.cwd(), "../..") },
   reactStrictMode: true,
   transpilePackages: ["@leadforge/database", "@leadforge/shared", "@leadforge/compliance"],
