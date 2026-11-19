@@ -13,3 +13,4 @@ export * from "./scoring";
 export * from "./search";
 export * from "./taxonomy";
 export * from "./verify";
+export * from "./suggest";

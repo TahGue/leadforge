@@ -38,6 +38,11 @@ x-app-env: &app-env
   MAIL_ENABLED: "false"
   MAIL_POSTAL_ADDRESS: ${MAIL_POSTAL_ADDRESS:-}
   BOUNCE_INGEST_KEY: ${BOUNCE_INGEST_KEY:-}
+  # Local AI (profile "ai"): keyword → industry suggestions in the web app.
+  OLLAMA_ENABLED: ${OLLAMA_ENABLED:-false}
+  OLLAMA_URL: http://ollama:11434
+  OLLAMA_CLASSIFICATION_MODEL: ${OLLAMA_CLASSIFICATION_MODEL:-qwen3.8:27b}
+  OLLAMA_SUGGEST_TIMEOUT_MS: ${OLLAMA_SUGGEST_TIMEOUT_MS:-120000}
   NODE_ENV: production
 
 services:

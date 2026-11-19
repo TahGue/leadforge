@@ -7,6 +7,7 @@ fixture. Skipped automatically when no database is reachable.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import http.server
 import os
 import sys
@@ -132,6 +133,34 @@ async def _discover() -> bool:
         return await discovery.process_one(conn)
     finally:
         await conn.close()
+
+
+def test_discovery_heartbeat_keeps_a_long_run_alive(db: psycopg.Connection[dict[str, Any]]) -> None:
+    org_id = _org(db)
+    project_id = _project(db, org_id)
+    source_id = _source(db, org_id, approved=True)
+    live = _run(db, org_id, project_id, source_id, {})
+    done = _run(db, org_id, project_id, _source(db, org_id, approved=True), {})  # one run per project and source
+    db.execute(
+        """UPDATE "DiscoveryRun" SET status = (CASE WHEN id = %s THEN 'RUNNING' ELSE 'SUCCEEDED' END)::"RunJobStatus",
+               "startedAt" = now() - interval '2 hours' WHERE id = ANY(%s)""",
+        (live, [live, done]),
+    )
+    db.commit()
+
+    async def beat_briefly(run_id: str) -> None:
+        task = asyncio.create_task(discovery.heartbeat(run_id, every=0.05))
+        await asyncio.sleep(0.5)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    asyncio.run(beat_briefly(live))
+    asyncio.run(beat_briefly(done))
+    rows = {r["id"]: r for r in db.execute('SELECT id, "heartbeatAt" FROM "DiscoveryRun" WHERE id = ANY(%s)', ([live, done],)).fetchall()}
+    db.rollback()
+    assert rows[live]["heartbeatAt"] is not None  # recovery now sees it as alive despite the old startedAt
+    assert rows[done]["heartbeatAt"] is None  # a finished run is never touched
 
 
 def test_discovery_stages_records_and_blocks_unapproved_sources(db: psycopg.Connection[dict[str, Any]]) -> None:
@@ -263,3 +292,136 @@ def test_crawl_of_a_suppressed_domain_is_cancelled_without_fetching(db: psycopg.
             break
     assert row is not None
     assert row["status"] == "CANCELLED" and row["errorCode"] == "domain_suppressed" and row["pagesFetched"] == 0
+
+
+def test_ai_classification_reads_the_company_industry_label(db: psycopg.Connection[dict[str, Any]]) -> None:
+    from leadforge.ai import companies_to_classify, company_text
+
+    org_id = _org(db)
+    company_id = uuid.uuid4().hex
+    db.execute(
+        """INSERT INTO "Company" (id, "organizationId", name, "normalizedName", description, industry, "createdAt", "updatedAt")
+           VALUES (%s, %s, 'Frantoio Prova', 'frantoio prova', %s, 'craft=oil_mill', now(), now())""",
+        (company_id, org_id, "Frantoio Prova presses extra virgin olive oil from local groves."),
+    )
+    db.commit()
+
+    async def pick() -> list[dict[str, Any]]:
+        conn = await psycopg.AsyncConnection.connect(_dsn(), row_factory=dict_row)
+        try:
+            return await companies_to_classify(conn, 10_000)
+        finally:
+            await conn.close()
+
+    try:
+        row = next(r for r in asyncio.run(pick()) if r["id"] == company_id)
+        assert row["industryLabel"] == "craft=oil_mill"
+        assert "craft=oil_mill" in company_text(row)
+    finally:
+        db.execute('DELETE FROM "Organization" WHERE id = %s', (org_id,))
+        db.commit()
+
+
+def test_project_pauses_only_when_refusals_are_the_norm(db: psycopg.Connection[dict[str, Any]]) -> None:
+    from leadforge.store import pause_project_if_blocked
+
+    org_id = _org(db)
+    project_id = _project(db, org_id)
+
+    def jobs(status: str, n: int) -> None:
+        for _ in range(n):
+            url = f"https://{uuid.uuid4().hex[:12]}.test/"
+            db.execute(
+                """INSERT INTO "CrawlJob" (id, "organizationId", "projectId", "rootUrl", "urlHash", status, "updatedAt")
+                   VALUES (%s, %s, %s, %s, %s, %s, now())""",
+                (uuid.uuid4().hex, org_id, project_id, url, uuid.uuid4().hex, status),
+            )
+        db.commit()
+
+    async def check() -> bool:
+        conn = await psycopg.AsyncConnection.connect(_dsn(), row_factory=dict_row)
+        try:
+            paused = await pause_project_if_blocked(conn, project_id, 5)
+            await conn.commit()
+            return paused
+        finally:
+            await conn.close()
+
+    def status() -> str:
+        row = db.execute('SELECT status FROM "DiscoveryProject" WHERE id = %s', (project_id,)).fetchone()
+        db.rollback()
+        return str(row["status"]) if row else ""
+
+    try:
+        # Many independent sites: a few refuse (403, robots.txt) and are skipped; the project goes on.
+        jobs("BLOCKED", 5)
+        jobs("PARTIAL", 8)
+        jobs("QUEUED", 40)  # unfinished crawls do not count
+        assert asyncio.run(check()) is False and status() == "RUNNING"
+        # Refusals become the norm: we are probably being blocked, so a person must look.
+        jobs("BLOCKED", 4)
+        assert asyncio.run(check()) is True and status() == "PAUSED"
+    finally:
+        db.execute('DELETE FROM "Organization" WHERE id = %s', (org_id,))
+        db.commit()
+
+
+def test_triage_learns_an_organizations_labels_and_classifies_its_pending_companies(
+    db: psycopg.Connection[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from leadforge import triage
+
+    monkeypatch.setattr(settings, "triage_min_examples", 40)
+    monkeypatch.setattr(settings, "triage_min_per_class", 10)
+    monkeypatch.setattr(settings, "triage_accept_probability", 0.6)
+    org_id = _org(db)
+    codes = [r["code"] for r in db.execute('SELECT code FROM "Industry" WHERE code IS NOT NULL ORDER BY code LIMIT 2').fetchall()]
+    texts = {
+        codes[0]: "Frantoio {n} produce olio extravergine di oliva dalle nostre olive, frantoio a freddo.",
+        codes[1]: "Hotel {n} offre camere, colazione, piscina e parcheggio vicino al mare.",
+    }
+
+    def company(name: str, description: str) -> str:
+        company_id = uuid.uuid4().hex
+        db.execute(
+            """INSERT INTO "Company" (id, "organizationId", name, "normalizedName", description, "createdAt", "updatedAt")
+               VALUES (%s, %s, %s, %s, %s, now(), now())""",
+            (company_id, org_id, name, name.lower(), description),
+        )
+        return company_id
+
+    for code, template in texts.items():
+        for n in range(25):
+            cid = company(f"{code} {n}", template.format(n=n))
+            db.execute(
+                """INSERT INTO "CompanyIndustry" (id, "companyId", "industryId", "isPrimary", confidence, method, "createdAt", "updatedAt")
+                   SELECT %s, %s, id, true, 0.7, 'AI', now(), now() FROM "Industry" WHERE code = %s""",
+                (uuid.uuid4().hex, cid, code),
+            )
+    pending = company("Frantoio Nuovo", "Frantoio Nuovo produce olio extravergine di oliva, frantoio a freddo dal 1950.")
+    db.commit()
+
+    async def run() -> dict[str, int]:
+        conn = await psycopg.AsyncConnection.connect(_dsn(), row_factory=dict_row)
+        try:
+            model = triage.Triage(organizations={org_id})  # never touch other tenants' dev data
+            await model.maybe_retrain(conn, force=True)
+            assert set(model.models) == {org_id} and model.models[org_id].trained_on == 50
+            return await model.run_batch(conn)
+        finally:
+            await conn.close()
+
+    try:
+        stats = asyncio.run(run())
+        assert stats["industry"] >= 1
+        row = db.execute(
+            """SELECT i.code, ci.method, ci.confidence, ci.evidence FROM "CompanyIndustry" ci
+               JOIN "Industry" i ON i.id = ci."industryId" WHERE ci."companyId" = %s""",
+            (pending,),
+        ).fetchone()
+        assert row is not None and row["code"] == codes[0] and row["method"] == "MODEL"
+        assert row["confidence"] <= triage.MAX_CONFIDENCE
+        assert "triage-v1" in row["evidence"]
+    finally:
+        db.execute('DELETE FROM "Organization" WHERE id = %s', (org_id,))
+        db.commit()

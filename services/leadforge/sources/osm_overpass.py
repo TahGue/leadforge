@@ -21,6 +21,8 @@ from ..safety import validate_url
 from .base import CompanyRecord, Scope, ScopeArea, SourceAdapter, SourcePolicy
 
 DEFAULT_ENDPOINT = "https://overpass-api.de/api/interpreter"
+AREA_ATTEMPTS = 2
+AREA_RETRY_SECONDS = 60.0
 
 # Internal sector code -> OSM tag filters. Unlisted sectors fall back to generic business tags.
 SECTOR_TAGS: dict[str, list[str]] = {
@@ -43,8 +45,39 @@ SECTOR_TAGS: dict[str, list[str]] = {
 }
 GENERIC = ['["office"]', '["craft"]', '["shop"]', '["industrial"]']
 
+# Project include-keyword term -> precise OSM tag filters. A sector is too broad for
+# niche products (agriculture-food would return every brewery and bakery), so when a
+# project's keywords name a product listed here, these filters replace the sector ones.
+# A name pattern alone would scan every named object in a country (too slow for a
+# public Overpass server), so it is anchored to rarer business keys; restaurants,
+# hotels and shops do not carry these keys.
+_OLIVE_NAMES = "olive oil|oil mill|olivar|oleific|oleícola|oleicola|frantoio|almazara|aceite|azeite|lagar|huile d.olive|huilerie|moulin à huile|zeytinya|ελαιο"
+KEYWORD_TAGS: dict[str, list[str]] = {
+    "olive": [
+        '["craft"="oil_mill"]',
+        '["product"~"olive",i]',
+        '["produce"~"olive",i]',
+        *(f'[{key}]["name"~"{_OLIVE_NAMES}",i]' for key in ('"craft"', '"man_made"="works"', '"industrial"', '"office"="company"')),
+    ],
+    "frantoio": ['["craft"="oil_mill"]'],
+    "oil mill": ['["craft"="oil_mill"]'],
+}
+
+
+def _keyword_filters(keywords: list[str]) -> list[str]:
+    chosen: list[str] = []
+    for keyword in keywords:
+        text = keyword.lower()
+        for term, tags in KEYWORD_TAGS.items():
+            if term in text:
+                chosen.extend(tag for tag in tags if tag not in chosen)
+    return chosen
+
 
 def _filters(scope: Scope) -> list[str]:
+    by_keyword = _keyword_filters(scope.keywords)
+    if by_keyword:
+        return by_keyword
     sectors = {code.split(".")[0] for code in scope.sector_codes}
     chosen: list[str] = []
     for sector in sorted(sectors):
@@ -95,12 +128,17 @@ def to_record(element: dict[str, Any], licence: str | None) -> CompanyRecord | N
     lon = element.get("lon") or (element.get("center") or {}).get("lon")
     kind = element.get("type", "node")
     street = " ".join(x for x in (tags.get("addr:street"), tags.get("addr:housenumber")) if x)
+    # What the place makes or grows ("product=olive_oil") is the only description most
+    # OSM businesses have; keyword filters in normalization match against it.
+    described = [tags.get("description")] + [f"{key}: {tags[key].replace('_', ' ')}" for key in ("product", "produce") if tags.get(key)]
+    description = "; ".join(x for x in described if x) or None
     try:
         return CompanyRecord(
             source_record_id=f"{kind}/{element.get('id')}",
             source_url=f"https://www.openstreetmap.org/{kind}/{element.get('id')}",
             name=name[:300],
             website=website,
+            description=description[:5000] if description else None,
             country=(tags.get("addr:country") or None),
             city=tags.get("addr:city"),
             postal_code=tags.get("addr:postcode"),
@@ -129,6 +167,7 @@ class OverpassAdapter(SourceAdapter):
         tag_filters = _filters(scope)
         emitted = 0
         seen: set[str] = set()
+        self.skipped_areas.clear()
         async with make_client(timeout=timeout + 15) as client:
             for index, area in enumerate(scope.areas):
                 q = build_query(area, tag_filters, max(1, limit - emitted), timeout)
@@ -136,13 +175,13 @@ class OverpassAdapter(SourceAdapter):
                     continue
                 if index:
                     await asyncio.sleep(60 / max(rpm, 1))
-                response = await client.post(endpoint, data={"data": q})
-                if response.status_code in {429, 403}:
-                    raise PolicyStop(f"overpass_http_{response.status_code}")
-                if response.status_code >= 500:
-                    raise httpx.HTTPStatusError("overpass server error", request=response.request, response=response)
-                response.raise_for_status()
-                for element in response.json().get("elements", []):
+                elements = await self._fetch_area(client, endpoint, q, rpm)
+                if elements is None:
+                    # A busy public server must not cost the whole multi-country run:
+                    # skip this area, keep going, and report it (the run ends PARTIAL).
+                    self.skipped_areas.append(area.country or area.name or area.level)
+                    continue
+                for element in elements:
                     record = to_record(element, self.policy.get("licence"))
                     if record is None or record.source_record_id in seen:
                         continue
@@ -153,6 +192,27 @@ class OverpassAdapter(SourceAdapter):
                     emitted += 1
                     if emitted >= limit:
                         return
+        if self.skipped_areas and not emitted:
+            # Nothing came back at all: let the runner retry the run later.
+            raise httpx.TransportError(f"overpass unavailable for all areas: {', '.join(self.skipped_areas)}")
+
+    async def _fetch_area(self, client: httpx.AsyncClient, endpoint: str, query: str, rpm: int) -> list[dict[str, Any]] | None:
+        """One area's elements, retried once after a server error or timeout; None if it stays unavailable."""
+        for attempt in range(AREA_ATTEMPTS):
+            if attempt:
+                await asyncio.sleep(AREA_RETRY_SECONDS)
+            try:
+                response = await client.post(endpoint, data={"data": query})
+            except httpx.TimeoutException:
+                continue
+            if response.status_code in {429, 403}:
+                raise PolicyStop(f"overpass_http_{response.status_code}")
+            if response.status_code >= 500:
+                continue
+            response.raise_for_status()
+            elements: list[dict[str, Any]] = response.json().get("elements", [])
+            return elements
+        return None
 
     async def get_policy(self) -> SourcePolicy:
         return SourcePolicy(

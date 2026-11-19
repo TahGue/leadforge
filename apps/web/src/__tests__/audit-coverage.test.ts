@@ -12,6 +12,8 @@ const MUTATING = /export (?:const|async function|function) (?:POST|PATCH|PUT|DEL
 const EXEMPT: Record<string, string> = {
   // Read-only computation exposed as POST because the body is a full project draft.
   "v1/discovery-projects/[id]/preview/route.ts": "read-only preview",
+  // Read-only suggestion (taxonomy match and local AI); nothing is stored until a project is saved.
+  "v1/industries/suggest/route.ts": "read-only suggestion",
   // Writes an append-only, versioned EligibilityDecision row, which is its own audit trail (Phase 9, frozen).
   "v1/eligibility/evaluate/route.ts": "append-only decision record",
   // Public, token-authenticated; records a suppression with its source instead of an actor.

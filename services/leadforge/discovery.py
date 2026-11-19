@@ -7,6 +7,8 @@ TypeScript company_normalization stage.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -21,12 +23,30 @@ from .store import (
     AsyncConn,
     DiscoveryRun,
     claim_discovery_run,
+    connect,
     finish_discovery_run,
     insert_company_candidates,
 )
 
 log = logging.getLogger("leadforge.discovery")
 BATCH = 200
+# Well inside the orchestrator's stale-job timeout (WORKER_STALE_RUNNING_MINUTES, default 30).
+HEARTBEAT_SECONDS = 60.0
+
+
+async def heartbeat(run_id: str, every: float = HEARTBEAT_SECONDS) -> None:
+    """Keep a long run's lease alive. Uses its own connection: the run's connection is busy
+    with the adapter and its batches, and must not be shared across tasks."""
+    while True:
+        await asyncio.sleep(every)
+        try:
+            async with await connect() as hb:
+                await hb.execute(
+                    """UPDATE "DiscoveryRun" SET "heartbeatAt" = now() WHERE id = %s AND status = 'RUNNING'""", (run_id,)
+                )
+                await hb.commit()
+        except Exception as error:  # a missed beat is retried next interval; the run itself goes on
+            log.warning("discovery heartbeat failed run=%s: %s", run_id, error)
 
 
 def policy_refusal(run: DiscoveryRun) -> str | None:
@@ -47,6 +67,16 @@ async def process_one(conn: AsyncConn) -> bool:
     run = await claim_discovery_run(conn)
     if run is None:
         return False
+    beat = asyncio.create_task(heartbeat(run.id))
+    try:
+        return await _process(conn, run)
+    finally:
+        beat.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await beat
+
+
+async def _process(conn: AsyncConn, run: DiscoveryRun) -> bool:
     found = 0
     try:
         refusal = policy_refusal(run)
@@ -80,12 +110,21 @@ async def process_one(conn: AsyncConn) -> bool:
         await finish_discovery_run(
             conn,
             run.id,
-            "PARTIAL" if capped else "SUCCEEDED",
+            "PARTIAL" if capped or adapter.skipped_areas else "SUCCEEDED",
             found=found,
-            metrics={"limit": limit, "capped": capped, "areas": len(scope.areas), "countries": scope.countries},
+            metrics={
+                "limit": limit,
+                "capped": capped,
+                "areas": len(scope.areas),
+                "countries": scope.countries,
+                "skippedAreas": adapter.skipped_areas,
+            },
         )
         await conn.commit()
-        log.info("discovery run=%s adapter=%s records=%s capped=%s", run.id, run.adapter, found, capped)
+        log.info(
+            "discovery run=%s adapter=%s records=%s capped=%s skipped=%s",
+            run.id, run.adapter, found, capped, ",".join(adapter.skipped_areas) or "-",
+        )
         return True
     except PolicyStop as stop:
         await conn.rollback()

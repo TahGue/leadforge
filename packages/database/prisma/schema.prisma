@@ -1502,6 +1502,8 @@ model DiscoveryRun {
   scheduledFor     DateTime     @default(now())
   nextRetryAt      DateTime?
   startedAt        DateTime?
+  /// Refreshed by the discovery worker while the run is in progress; lease recovery reads it.
+  heartbeatAt      DateTime?
   finishedAt       DateTime?
   createdAt        DateTime     @default(now())
 

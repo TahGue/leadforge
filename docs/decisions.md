@@ -303,3 +303,15 @@ Format: **Status** · **Context** · **Decision** · **Consequences**.
 **Decision:** Default `OLLAMA_CLASSIFICATION_MODEL=qwen3.8:27b`. Benchmark: 96% accuracy, 1 false store in 24, correct handling of a prompt-injection item, 18.5 s p50 ([performance](./performance.md#local-ai-classification)). Classification stays opt-in (`OLLAMA_ENABLED=false` by default).
 
 **Consequences:** Needs about 18 GB of GPU or system memory. Operators on smaller hosts must benchmark a smaller model with `leadforge.ai_eval` and override the variable. Revisit when the labelled set includes real companies.
+
+---
+
+## ADR-0026 — A trained triage classifier decides clear cases before the LLM
+
+**Status:** Accepted (2026-11-19)
+
+**Context:** On the Italy olive oil run, the LLM classified one company every 5–18 seconds, so 1,100 crawled sites waited hours. Most of them look like companies the LLM had already labelled.
+
+**Decision:** The classification role first runs a small classifier per organization (TF-IDF character and word features, logistic regression; scikit-learn), trained on that organization's `AI` and `MANUAL` industry labels and on the companies the LLM found no industry for. It is retrained every `TRIAGE_RETRAIN_SECONDS` once there are `TRIAGE_MIN_EXAMPLES` labels. At `TRIAGE_ACCEPT_PROBABILITY` or above it stores an industry with method `MODEL` (confidence capped at 0.6, below the LLM's 0.7, with the words that drove the decision as evidence) or records "no industry fits" as a classification attempt. Everything else goes to the LLM. `MODEL` and `KEYWORD` rows are never used as training labels.
+
+**Consequences:** Clear cases are decided in milliseconds and the LLM only sees the uncertain ones. The classifier copies the LLM's mistakes and cannot learn an industry it has seen fewer than `TRIAGE_MIN_PER_CLASS` times. Labels never cross organizations. On the Italy set it agreed with the LLM 80% of the time in 5-fold cross-validation. Disable with `TRIAGE_ENABLED=false`.

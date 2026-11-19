@@ -80,6 +80,19 @@ describe("orchestration sweep", () => {
     expect((await prisma.crawlJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("QUEUED");
   });
 
+  it("keeps a long discovery run whose worker still sends heartbeats", async () => {
+    const run = await prisma.discoveryRun.findFirstOrThrow({ where: { projectId } });
+    const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
+    await prisma.discoveryRun.update({ where: { id: run.id }, data: { status: "RUNNING", startedAt: twoHoursAgo, heartbeatAt: new Date() } });
+    await recoverStaleJobs();
+    expect((await prisma.discoveryRun.findUniqueOrThrow({ where: { id: run.id } })).status).toBe("RUNNING");
+    // Silent worker: the lease expires and the run is re-queued.
+    await prisma.discoveryRun.update({ where: { id: run.id }, data: { heartbeatAt: twoHoursAgo } });
+    await recoverStaleJobs();
+    expect((await prisma.discoveryRun.findUniqueOrThrow({ where: { id: run.id } })).status).toBe("QUEUED");
+    await prisma.discoveryRun.update({ where: { id: run.id }, data: { status: "SUCCEEDED", finishedAt: new Date() } });
+  });
+
   it("completes the project once every job is terminal", async () => {
     await prisma.crawlJob.updateMany({ where: { projectId }, data: { status: "SUCCEEDED", finishedAt: new Date() } });
     await sweep();

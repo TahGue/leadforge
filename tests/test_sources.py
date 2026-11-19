@@ -13,7 +13,7 @@ from leadforge.sources import get_adapter
 from leadforge.sources.base import CompanyRecord, Scope, ScopeArea
 from leadforge.sources.domain_list import registrable_domain
 from leadforge.sources.open_dataset import nace_matches
-from leadforge.sources.osm_overpass import build_query, to_record
+from leadforge.sources.osm_overpass import _filters, build_query, to_record
 from leadforge.store import DiscoveryRun
 
 
@@ -74,6 +74,22 @@ def test_overpass_query_for_city_radius() -> None:
     assert '["website"]' in query and "out center tags 50" in query
 
 
+def test_overpass_keyword_tags_replace_broad_sector_tags() -> None:
+    olive = Scope(worldwide=False, sector_codes=["agriculture-food.food-processing"], keywords=["olive oil", "extra virgin"])
+    filters = _filters(olive)
+    assert '["craft"="oil_mill"]' in filters
+    assert not any("brewery" in f for f in filters)  # no breweries and bakeries for an olive-oil project
+    # Name patterns are anchored to a business key; a bare name regex is too slow country-wide.
+    assert all(not f.startswith('["name"') for f in filters)
+    assert any(f.startswith('["craft"]["name"~') for f in filters)
+    # Without a known product keyword the sector tags still apply.
+    plain = Scope(worldwide=False, sector_codes=["agriculture-food.beverages"], keywords=["craft beer"])
+    assert any("brewery" in f for f in _filters(plain))
+    area = ScopeArea(level="COUNTRY", country="IT", name="Italy")
+    query = build_query(area, filters, 100, 180)
+    assert query is not None and 'area["ISO3166-1"="IT"]' in query and 'node["craft"="oil_mill"]["name"]["website"](area.a);' in query
+
+
 def test_overpass_record_parsing() -> None:
     element = {
         "type": "node",
@@ -89,6 +105,9 @@ def test_overpass_record_parsing() -> None:
     assert record.industry_label == "craft=carpenter"
     assert record.licence == "ODbL 1.0"
     assert to_record({"type": "node", "id": 1, "tags": {"name": "No site"}}, None) is None
+    farm = to_record({"type": "way", "id": 7, "center": {"lat": 37.9, "lon": 23.7}, "tags": {"name": "Ktima Nikou", "website": "https://ktima.gr", "product": "olive_oil;wine"}}, None)
+    assert farm is not None and farm.description == "product: olive oil;wine"
+    assert record.description is None
 
 
 def _run(policy: dict[str, object], source_type: str = "DATASET") -> DiscoveryRun:
@@ -107,3 +126,38 @@ def test_unapproved_sources_never_run() -> None:
     )
     assert policy_refusal(_run({"policyStatus": "APPROVED", "enabled": True, "permitted": True, "automatedAccessAllowed": True})) is None
     assert policy_refusal(_run({"policyStatus": "APPROVED", "enabled": True, "permitted": True}, "IMPORT")) is None
+
+
+def test_overpass_skips_an_unavailable_country_instead_of_failing_the_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    import httpx
+
+    from leadforge.sources import osm_overpass
+
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        query = request.content.decode()
+        calls.append("IT" if "%22IT%22" in query else "GR")
+        if "%22IT%22" in query:
+            return httpx.Response(504, text="at capacity")
+        element = {"type": "node", "id": 9, "lat": 37.9, "lon": 23.7, "tags": {"name": "Elaiourgeio", "website": "https://elaio.gr", "craft": "oil_mill"}}
+        return httpx.Response(200, json={"elements": [element]})
+
+    monkeypatch.setattr(osm_overpass, "make_client", lambda **_: httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(osm_overpass, "AREA_RETRY_SECONDS", 0)
+    monkeypatch.setattr(osm_overpass, "validate_url", lambda url: url)
+    adapter = osm_overpass.OverpassAdapter({}, {"rateLimit": {"requestsPerMinute": 60000}})
+    scope = Scope(
+        worldwide=False,
+        keywords=["olive oil"],
+        areas=[ScopeArea(level="COUNTRY", country="IT", name="Italy"), ScopeArea(level="COUNTRY", country="GR", name="Greece")],
+    )
+    records = asyncio.run(collect(adapter, {}, scope))
+    assert [r.name for r in records] == ["Elaiourgeio"]
+    assert adapter.skipped_areas == ["IT"]
+    assert calls == ["IT", "IT", "GR"]  # one retry for the busy country, then move on
+
+    # When every country is unavailable the run fails transiently so the runner retries it later.
+    only_it = Scope(worldwide=False, keywords=["olive oil"], areas=[ScopeArea(level="COUNTRY", country="IT", name="Italy")])
+    with pytest.raises(httpx.TransportError):
+        asyncio.run(collect(adapter, {}, only_it))

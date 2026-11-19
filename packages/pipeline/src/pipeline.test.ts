@@ -7,6 +7,7 @@ import { conflictGroups, precheck } from "./normalize";
 import { canTransition, requiresApproval } from "./projects";
 import { checkDomain, providerCategory, summarize, type Resolver } from "./verify";
 import { combine, companyScore } from "./scoring";
+import { cleanKeywords, parseAiAnswer } from "./suggest";
 
 const place = (p: Partial<ResolvedLocation>): ResolvedLocation => ({
   countryIso2: null,
@@ -231,5 +232,48 @@ describe("conflictGroups", () => {
     const rows = Array.from({ length: 50 }, (_, i) => row(`r${i}`, `https://c${i % 7}.se`, `Name ${i % 11}`));
     const flat = conflictGroups(rows).flat().map((r) => r.id);
     expect(flat.sort()).toEqual(rows.map((r) => r.id).sort());
+  });
+});
+
+describe("keyword suggestions", () => {
+  const entries = [
+    { id: "i1", code: "agriculture-food.food-processing", name: "Food processing", parent: "Agriculture and food", aliases: ["dairy"] },
+    { id: "i2", code: "agriculture-food.farming", name: "Crop and animal production", parent: "Agriculture and food", aliases: [] },
+  ];
+
+  it("cleans keywords: trims, lowercases, drops junk, generic words and duplicates", () => {
+    expect(cleanKeywords(["  Olive Oil ", "olive oil", "producer", "x", "<script>", "https://a.b", 42, "a b c d e", "Frantoio"], 10)).toEqual([
+      "olive oil",
+      "frantoio",
+    ]);
+    expect(cleanKeywords("not a list", 5)).toEqual([]);
+    expect(cleanKeywords(["a1", "b2", "c3"], 2)).toEqual(["a1", "b2"]);
+  });
+
+  it("keeps only taxonomy codes the model was offered and caps its confidence", () => {
+    const answer = JSON.stringify({
+      industries: [
+        { code: "made-up.code", confidence: 1 },
+        { code: "AGRICULTURE-FOOD.FOOD-PROCESSING", confidence: 0.99, reason: "olive mills" },
+        { code: "agriculture-food.farming", confidence: "high" },
+      ],
+      include: ["olive oil", "extra virgin"],
+      exclude: ["retail", "olive oil", "Olive oil producer"],
+    });
+    const result = parseAiAnswer("olive oil producer", answer, entries);
+    expect(result.method).toBe("AI");
+    expect(result.industries.map((i) => [i.code, i.confidence])).toEqual([
+      ["agriculture-food.food-processing", 0.85],
+      ["agriculture-food.farming", 0.5],
+    ]);
+    expect(result.includeKeywords).toEqual(["olive oil producer", "olive oil", "extra virgin"]);
+    // An exclude that would also match the wanted companies is dropped.
+    expect(result.excludeKeywords).toEqual(["retail"]);
+  });
+
+  it("rejects answers that are not JSON or name no valid code", () => {
+    expect(() => parseAiAnswer("x", "Sure! Here you go", entries)).toThrow(/JSON/);
+    expect(() => parseAiAnswer("x", '{"industries":[{"code":"nope"}]}', entries)).toThrow(/no valid taxonomy code/);
+    expect(parseAiAnswer("x y", '```json\n{"industries":[{"code":"agriculture-food.farming"}]}\n```', entries).industries).toHaveLength(1);
   });
 });

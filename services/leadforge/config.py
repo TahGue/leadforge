@@ -38,6 +38,15 @@ class Settings(BaseSettings):
     ollama_timeout_seconds: float = 180.0  # first call loads the model
     ollama_batch: int = 10
 
+    # Trained triage classifier (ADR-0026): learns from the LLM's and reviewers' labels,
+    # decides the clear cases in milliseconds and leaves the rest to the LLM.
+    triage_enabled: bool = True
+    triage_min_examples: int = 100  # labelled companies an organization needs before a model is trained
+    triage_min_per_class: int = 10  # industries with fewer examples are left to the LLM
+    triage_accept_probability: float = 0.85
+    triage_retrain_seconds: float = 600.0
+    triage_batch: int = 2000
+
     @property
     def crawler_max_bytes(self) -> int:
         return int(self.crawler_max_response_mb * 1024 * 1024)

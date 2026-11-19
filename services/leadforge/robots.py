@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from .config import settings
-from .safety import UnsafeUrlError, validate_url
+from .safety import UnresolvableHostError, UnsafeUrlError, validate_url
 
 CACHE_TTL_SECONDS = 24 * 60 * 60
 
@@ -22,6 +22,9 @@ class RobotsEntry:
     expires_at: float
     raw: str | None
     crawl_delay: float | None
+    # The site could not be reached at all (no DNS record, connection refused or timed out).
+    # Fetching is still disallowed, but nobody refused us: the site is gone or down.
+    unreachable: bool = False
 
     @property
     def digest(self) -> str | None:
@@ -62,6 +65,7 @@ class AsyncRobotsCache:
         robots_url = f"{key}/robots.txt"
         status: int | None
         text: str | None = None
+        unreachable = False
         try:
             self._validator(robots_url)
             response = await self._client.get(robots_url, timeout=10.0, follow_redirects=False)
@@ -70,9 +74,12 @@ class AsyncRobotsCache:
                 status, text = 404, None  # do not follow robots redirects off-site; treat as absent
             elif status < 400:
                 text = response.text
+        except (httpx.ConnectError, httpx.ConnectTimeout, UnresolvableHostError):
+            status, unreachable = None, True
         except (httpx.HTTPError, UnsafeUrlError):
             status = None
         entry = parse_robots(status, text, self.agent_token)
+        entry.unreachable = unreachable
         self._cache[key] = entry
         return entry
 

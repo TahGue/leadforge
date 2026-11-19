@@ -106,6 +106,8 @@ class SourceAdapter(ABC):
     def __init__(self, config: dict[str, Any], policy: dict[str, Any]) -> None:
         self.config = config
         self.policy = policy
+        # Areas a search could not cover (source unavailable); the run then ends PARTIAL.
+        self.skipped_areas: list[str] = []
 
     @abstractmethod
     def search(self, query: dict[str, Any], scope: Scope, filters: dict[str, Any], limit: int) -> AsyncIterator[CompanyRecord]:

@@ -108,7 +108,7 @@ async def companies_to_classify(conn: AsyncConn, limit: int) -> list[dict[str, A
     rows = await (
         await conn.execute(
             """
-            SELECT c.id, c.name, c.description, c."industryLabel",
+            SELECT c.id, c.name, c.description, c.industry AS "industryLabel",
                    (SELECT string_agg(e."extractedValue", ' | ') FROM "SourceEvidence" e
                     WHERE e."companyId" = c.id AND e."fieldName" = 'site_name') AS site_name
             FROM "Company" c

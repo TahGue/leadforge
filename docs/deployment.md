@@ -75,6 +75,8 @@ Terminate TLS in front of `127.0.0.1:3000` (Caddy, nginx or Traefik). Forward `X
 
    Pick the model with the fewest **false stores** (wrong codes that would be saved), then accuracy and latency. Set `OLLAMA_CLASSIFICATION_MODEL`, `OLLAMA_ENABLED=true`, and restart the crawler. The bundled set (`tests/golden/classification.jsonl`) is synthetic; add real, hand-labelled companies from your market for a decision you can rely on. Results so far are in [performance](./performance.md#local-ai-classification).
 
+   The same setting powers **Detect from a keyword** in the project wizard (`POST /api/v1/industries/suggest`): the web app asks the model to map a keyword such as "olive oil producer" to taxonomy codes and to propose include/exclude keywords. Codes the model invents are discarded, confidence is capped at 0.85, and nothing is stored until the user applies the suggestion and saves the project. With `OLLAMA_ENABLED=false`, or when the model fails or times out (`OLLAMA_SUGGEST_TIMEOUT_MS`, default 120000), the wizard falls back to the taxonomy aliases and says why. Restart the web app after changing these settings.
+
 ## 7. Monitoring
 
 ```bash

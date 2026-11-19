@@ -88,7 +88,12 @@ beforeAll(async () => {
   const admin = await prisma.user.findUniqueOrThrow({ where: { email: "admin@leadforge.local" }, include: { memberships: true } });
   organizationId = admin.memberships[0]!.organizationId;
   userSourceId = (await prisma.source.findFirstOrThrow({ where: { organizationId, adapter: "domain_list" } })).id;
-  unreviewedSourceId = (await prisma.source.findFirstOrThrow({ where: { organizationId, adapter: "osm_overpass" } })).id;
+  // Our own unreviewed source: the seeded OpenStreetMap source may have been approved by an operator.
+  unreviewedSourceId = (
+    await prisma.source.create({
+      data: { organizationId, name: `Unreviewed directory ${stamp}`, sourceType: "DIRECTORY", adapter: "osm_overpass", policyStatus: "UNREVIEWED" },
+    })
+  ).id;
   gothenburgId = (await prisma.city.findUniqueOrThrow({ where: { externalId: "seed:SE:goteborg" } })).id;
   stockholmId = (await prisma.city.findUniqueOrThrow({ where: { externalId: "seed:SE:stockholm" } })).id;
   resetTaxonomyCache();
@@ -97,6 +102,8 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
+  await prisma.discoveryProject.deleteMany({ where: { sources: { some: { sourceId: unreviewedSourceId } } } }).catch(() => undefined);
+  await prisma.source.delete({ where: { id: unreviewedSourceId } }).catch(() => undefined);
   await prisma.$disconnect();
 });
 
@@ -321,6 +328,17 @@ describe("data operations", () => {
     expect((await jobRetry.POST(req(`/api/v1/jobs/${job.id}/retry`, { body: {}, cookie: analystCookie }), ctx({ id: job.id }))).status).toBe(403);
     expect((await jobRetry.POST(req(`/api/v1/jobs/${job.id}/retry`, { body: {} }), ctx({ id: job.id }))).status).toBe(202);
     expect((await prisma.crawlJob.findUniqueOrThrow({ where: { id: job.id } })).status).toBe("QUEUED");
+  });
+
+  it("reopens a failed project when one of its jobs is retried", async () => {
+    const job = await prisma.crawlJob.findFirstOrThrow({ where: { organizationId, project: { name: `Construction in Gothenburg ${stamp}` } } });
+    await prisma.crawlJob.update({ where: { id: job.id }, data: { status: "FAILED", errorCode: "transient_exhausted" } });
+    await prisma.discoveryProject.update({ where: { id: job.projectId! }, data: { status: "FAILED", lastError: "overpass server error", finishedAt: new Date() } });
+    expect((await jobRetry.POST(req(`/api/v1/jobs/${job.id}/retry`, { body: {}, cookie: analystCookie }), ctx({ id: job.id }))).status).toBe(202);
+    const project = await prisma.discoveryProject.findUniqueOrThrow({ where: { id: job.projectId! } });
+    expect(project.status).toBe("RUNNING");
+    expect(project.lastError).toBeNull();
+    expect(project.finishedAt).toBeNull();
   });
 
   it("flags lookalike names for human review instead of merging", async () => {

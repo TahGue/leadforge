@@ -541,23 +541,44 @@ async def cooldown_domain(conn: AsyncConn, domain_id: str | None, hours: int = 2
     )
 
 
+# Share of finished crawls that must be refusals before a project pauses.
+BLOCKED_SHARE = 0.5
+
+
 async def pause_project_if_blocked(conn: AsyncConn, project_id: str | None, threshold: int) -> bool:
-    """Spec 11: stop on repeated access failures. Pauses the project for a person to look at."""
+    """Spec 11: stop on repeated access failures. Pauses the project for a person to look at.
+
+    A project spans many independent sites, and some always refuse crawlers (403, robots.txt).
+    Those are skipped one by one. The project pauses only when refusals are both numerous
+    (``threshold``) and the norm (``BLOCKED_SHARE`` of finished crawls), which points at us
+    being blocked rather than at a few sites' choices."""
     if not project_id:
         return False
     row = await (
         await conn.execute(
-            'SELECT count(*) AS n FROM "CrawlJob" WHERE "projectId" = %s AND status = \'BLOCKED\'', (project_id,)
+            """
+            SELECT count(*) FILTER (WHERE status = 'BLOCKED') AS blocked,
+                   count(*) FILTER (WHERE status IN ('SUCCEEDED', 'PARTIAL', 'FAILED', 'BLOCKED')) AS finished
+            FROM "CrawlJob" WHERE "projectId" = %s
+            """,
+            (project_id,),
         )
     ).fetchone()
-    if row and int(row["n"]) >= threshold:
+    if not row:
+        return False
+    blocked, finished = int(row["blocked"]), int(row["finished"])
+    if blocked >= threshold and blocked >= BLOCKED_SHARE * finished:
         result = await conn.execute(
             """
             UPDATE "DiscoveryProject" SET status = 'PAUSED',
                 "lastError" = %s, "updatedAt" = now()
             WHERE id = %s AND status = 'RUNNING'
             """,
-            (f"Paused automatically: {row['n']} sites refused access (threshold {threshold}). Review the policy stops before resuming.", project_id),
+            (
+                f"Paused automatically: {blocked} of {finished} sites refused access (threshold {threshold}, "
+                f"{int(BLOCKED_SHARE * 100)}% of finished crawls). Review the policy stops before resuming.",
+                project_id,
+            ),
         )
         return (result.rowcount or 0) > 0
     return False
@@ -590,7 +611,7 @@ async def claim_discovery_run(conn: AsyncConn) -> DiscoveryRun | None:
         await conn.execute(
             """
             UPDATE "DiscoveryRun" AS r
-            SET status = 'RUNNING', "attemptCount" = r."attemptCount" + 1, "startedAt" = now()
+            SET status = 'RUNNING', "attemptCount" = r."attemptCount" + 1, "startedAt" = now(), "heartbeatAt" = now()
             WHERE r.id = (
                 SELECT q.id FROM "DiscoveryRun" q
                 JOIN "DiscoveryProject" p ON p.id = q."projectId"

@@ -31,8 +31,19 @@ export const POST = withAuth<{ id: string }>(async (_request, session, params) =
   if (job.status === "BLOCKED" && !["ADMIN", "OWNER"].includes(session.role)) {
     throw new ApiError(403, "FORBIDDEN", "Policy-blocked jobs can only be re-queued by an admin");
   }
-  if (crawl) await prisma.crawlJob.update({ where: { id: crawl.id }, data: reset });
-  else await prisma.discoveryRun.update({ where: { id: run!.id }, data: reset });
+  await prisma.$transaction(async (tx) => {
+    if (crawl) await tx.crawlJob.update({ where: { id: crawl.id }, data: reset });
+    else await tx.discoveryRun.update({ where: { id: run!.id }, data: reset });
+    // A retried job belongs to a project that the sweep may already have closed as
+    // FAILED or COMPLETED. Reopen it, or the job's results would never be normalized
+    // (normalization only runs for RUNNING projects). Paused and cancelled projects stay as they are.
+    if (job.projectId) {
+      await tx.discoveryProject.updateMany({
+        where: { id: job.projectId, status: { in: ["FAILED", "COMPLETED"] } },
+        data: { status: "RUNNING", finishedAt: null, lastError: null },
+      });
+    }
+  });
   await audit({
     organizationId: session.organization.id,
     actorId: session.user.id,

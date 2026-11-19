@@ -20,6 +20,7 @@ import {
 import { api } from "@/lib/client";
 import { GeoPicker, type GeoOptions, type LocationValue } from "./geo-picker";
 import { IndustryPicker, type IndustryFilterValue, type IndustryNode } from "./industry-picker";
+import { KeywordDetector, type KeywordSuggestion } from "./keyword-detector";
 
 export interface WizardSource {
   id: string;
@@ -176,6 +177,30 @@ export function ProjectWizard({
   const patch = <K extends keyof DiscoveryProjectSettings>(key: K, value: Partial<DiscoveryProjectSettings[K]>) =>
     setSettings((current) => ({ ...current, [key]: { ...(current[key] as object), ...value } }));
 
+  // Merge a keyword suggestion: add its industries as included filters and its keywords to the lists.
+  function applySuggestion(suggestion: KeywordSuggestion) {
+    setIndustryFilters((current) => {
+      const next = [...current];
+      for (const industry of suggestion.industries) {
+        if (next.some((f) => f.industryId === industry.industryId)) continue;
+        next.push({
+          industryId: industry.industryId,
+          mode: "INCLUDE",
+          isPrimary: !next.some((f) => f.isPrimary),
+          includeDescendants: true,
+        });
+      }
+      return next;
+    });
+    const merge = (text: string, add: string[]) => {
+      const existing = lines(text);
+      const seen = new Set(existing.map((k) => k.toLowerCase()));
+      return [...existing, ...add.filter((k) => !seen.has(k.toLowerCase()))].join("\n");
+    };
+    setIncludeKeywords((text) => merge(text, suggestion.includeKeywords));
+    setExcludeKeywords((text) => merge(text, suggestion.excludeKeywords));
+  }
+
   const industryName = useMemo(() => {
     const map = new Map<string, string>();
     for (const sector of industries) {
@@ -321,6 +346,7 @@ export function ProjectWizard({
 
           {step === 2 ? (
             <div className="space-y-4">
+              <KeywordDetector onApply={applySuggestion} />
               <IndustryPicker tree={industries} value={industryFilters} onChange={setIndustryFilters} />
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="text-xs">

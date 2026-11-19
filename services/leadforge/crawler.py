@@ -171,7 +171,11 @@ async def crawl_job(
                               content_hash=None, duration_ms=0, bytes_received=0, render_mode="HTTP", parse_status="SKIPPED",
                               skip_reason="robots_disallow", artifact_id=None)
             if depth == 0:
-                outcome.status, outcome.policy_stop = "BLOCKED", "robots_disallow"
+                if (await robots.entry(url)).unreachable:
+                    # A dead or offline site is a failure, not a refusal: it must not count toward pausing the project.
+                    outcome.status, outcome.error_code = "FAILED", "site_unreachable"
+                else:
+                    outcome.status, outcome.policy_stop = "BLOCKED", "robots_disallow"
                 return outcome
             continue
 

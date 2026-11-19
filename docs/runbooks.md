@@ -28,7 +28,7 @@ Operational procedures (spec Phase 8). Commands assume Docker Compose on the hos
 
 ## A project paused itself
 
-The crawler pauses a project after `stopAfterBlocked` sites refuse access (spec §11).
+The crawler pauses a project when at least `stopAfterBlocked` sites have refused access **and** refusals make up at least half of the finished crawls (spec §11). A few sites that refuse (HTTP 403, robots.txt) are skipped one by one; refusals becoming the norm suggests the crawler itself is being blocked.
 
 1. Open the project and read **Policy stops**.
 2. If sites are blocking the crawler: lower the rate, check `CRAWLER_USER_AGENT`, and check whether the targets fit your sources' permitted use.

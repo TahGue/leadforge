@@ -21,7 +21,7 @@ import sys
 import time
 from typing import Any
 
-from . import ai, crawler, discovery, retention
+from . import ai, crawler, discovery, retention, triage
 from .config import settings
 from .net import make_client
 from .robots import AsyncRobotsCache
@@ -93,21 +93,31 @@ async def discovery_loop(once: bool) -> None:
 
 
 async def classify_loop(once: bool) -> None:
-    if not settings.ollama_enabled:
-        log.info("ollama disabled (OLLAMA_ENABLED=false); classification role idle")
+    if not settings.ollama_enabled and not settings.triage_enabled:
+        log.info("ollama and triage disabled; classification role idle")
         return
     conn = await connect()
-    client = ai.OllamaClient()
+    client = ai.OllamaClient() if settings.ollama_enabled else None
+    model = triage.Triage() if settings.triage_enabled else None
     try:
         while not stop.is_set():
-            stats = await ai.classify_batch(conn, client)
+            # The trained classifier takes the clear cases first; the LLM gets what it is unsure about.
+            decided: dict[str, int] = {}
+            if model:
+                await model.maybe_retrain(conn)
+                decided = await model.run_batch(conn)
+                if decided.get("industry") or decided.get("no_industry"):
+                    log.info("triage %s", decided)
+            stats = await ai.classify_batch(conn, client) if client else {}
             if any(stats.values()):
                 log.info("classification %s", stats)
             if once:
                 return
-            await asyncio.wait([asyncio.ensure_future(stop.wait())], timeout=30 if not any(stats.values()) else 1)
+            busy = any(stats.values()) or decided.get("industry") or decided.get("no_industry")
+            await asyncio.wait([asyncio.ensure_future(stop.wait())], timeout=1 if busy else 30)
     finally:
-        await client.close()
+        if client:
+            await client.close()
         await conn.close()
 
 

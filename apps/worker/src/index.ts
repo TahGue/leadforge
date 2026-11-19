@@ -56,8 +56,13 @@ export async function recoverStaleJobs(now = new Date()): Promise<{ crawls: numb
     where: { status: "RUNNING", updatedAt: { lt: cutoff } },
     data: { status: "QUEUED", scheduledFor: now, errorCode: "lease_expired" },
   });
+  // A discovery run is alive while its worker refreshes heartbeatAt; runs claimed before
+  // heartbeats existed fall back to startedAt.
   const runs = await prisma.discoveryRun.updateMany({
-    where: { status: "RUNNING", startedAt: { lt: cutoff } },
+    where: {
+      status: "RUNNING",
+      OR: [{ heartbeatAt: { lt: cutoff } }, { heartbeatAt: null, startedAt: { lt: cutoff } }],
+    },
     data: { status: "QUEUED", scheduledFor: now, errorCode: "lease_expired" },
   });
   return { crawls: crawls.count, runs: runs.count };

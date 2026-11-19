@@ -47,6 +47,10 @@ class UnsafeUrlError(ValueError):
     """Raised when a URL must not be fetched."""
 
 
+class UnresolvableHostError(UnsafeUrlError):
+    """The host has no DNS record: the site is gone, not refusing us."""
+
+
 @dataclass(frozen=True)
 class ValidatedUrl:
     url: str
@@ -73,10 +77,10 @@ def _resolve(host: str, port: int) -> list[str]:
     try:
         infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except socket.gaierror as error:
-        raise UnsafeUrlError(f"DNS resolution failed for {host}") from error
+        raise UnresolvableHostError(f"DNS resolution failed for {host}") from error
     addresses = sorted({str(info[4][0]) for info in infos})
     if not addresses:
-        raise UnsafeUrlError(f"DNS returned no addresses for {host}")
+        raise UnresolvableHostError(f"DNS returned no addresses for {host}")
     return addresses
 
 

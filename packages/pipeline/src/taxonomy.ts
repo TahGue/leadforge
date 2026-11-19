@@ -3,7 +3,8 @@
  *
  * Deterministic only: external codes (NACE) first, then exact alias matches on
  * the source-supplied label, then alias phrases inside the label/description.
- * Local AI classification (services/leadforge/ai.py) adds rows with method "AI".
+ * Local AI classification (services/leadforge/ai.py) adds rows with method "AI", and the
+ * trained triage classifier (services/leadforge/triage.py) adds rows with method "MODEL".
  */
 import { Prisma, prisma } from "@leadforge/database";
 import { normalizeName } from "@leadforge/shared";
