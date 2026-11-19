@@ -13,6 +13,7 @@ Discovery-only release. Campaigns, eligibility and SMTP stay frozen until the Ph
 - Load test at 1,000,000 companies (`docs/performance.md`).
 - Project wizard: **Detect from a keyword** (`POST /api/v1/industries/suggest`). The local AI maps a keyword such as "olive oil producer" to taxonomy industries and proposes include/exclude keywords; codes are validated against the taxonomy, and the taxonomy aliases are the fallback when AI is off or fails.
 - Trained triage classifier (ADR-0026): before the LLM, a per-organization scikit-learn model trained on earlier AI and manual labels decides the clear cases in milliseconds (method `MODEL`, confidence capped at 0.6, with the deciding words as evidence) and leaves the uncertain ones to the LLM. Settings `TRIAGE_*`.
+- Classification also covers crawled sites without a usable description, deciding on the company name and website domain (many small producers publish none). Such decisions are capped at confidence 0.5 and marked "name and domain only" in the evidence. Sites that were never crawled successfully are still skipped.
 - OpenStreetMap adapter: project keywords that name a niche product (olive oil, oil mills) select precise OSM tags instead of the broad sector tags, and OSM `product`/`produce` tags are kept as the record description so keyword filters can match them.
 
 ### Fixed

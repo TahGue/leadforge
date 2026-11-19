@@ -437,3 +437,46 @@ def test_triage_learns_an_organizations_labels_and_classifies_its_pending_compan
         db.execute('DELETE FROM "Organization" WHERE id = %s', (org_id,))
         db.execute('DELETE FROM "IndustryTaxonomyVersion" WHERE id = %s', (version_id,))
         db.commit()
+
+
+def test_crawled_sites_without_a_description_are_classified_on_name_and_domain(
+    db: psycopg.Connection[dict[str, Any]],
+) -> None:
+    from leadforge.ai import companies_to_classify, company_text
+
+    org_id = _org(db)
+
+    def company(name: str, website: str, crawl_status: str | None) -> str:
+        company_id = uuid.uuid4().hex
+        db.execute(
+            """INSERT INTO "Company" (id, "organizationId", name, "normalizedName", website, "createdAt", "updatedAt")
+               VALUES (%s, %s, %s, %s, %s, now(), now())""",
+            (company_id, org_id, name, name.lower(), website),
+        )
+        if crawl_status:
+            db.execute(
+                """INSERT INTO "CrawlJob" (id, "organizationId", "companyId", "rootUrl", "urlHash", status, priority, "createdAt", "updatedAt")
+                   VALUES (%s, %s, %s, %s, %s, %s, 0, now(), now())""",
+                (uuid.uuid4().hex, org_id, company_id, website, uuid.uuid4().hex, crawl_status),
+            )
+        return company_id
+
+    crawled = company("Frantoio Verdi", "https://www.frantoioverdi.it/", "PARTIAL")
+    dead = company("Oleificio Spento", "https://oleificiospento.it/", "FAILED")
+    never = company("Olio Mai", "https://oliomai.it/", None)
+    db.commit()
+
+    async def pick() -> list[dict[str, Any]]:
+        conn = await psycopg.AsyncConnection.connect(_dsn(), row_factory=dict_row)
+        try:
+            return await companies_to_classify(conn, 10_000)
+        finally:
+            await conn.close()
+
+    try:
+        rows = {r["id"]: r for r in asyncio.run(pick())}
+        assert crawled in rows and "frantoioverdi.it" in company_text(rows[crawled])
+        assert dead not in rows and never not in rows  # nothing but a name: not worth the model's time
+    finally:
+        db.execute('DELETE FROM "Organization" WHERE id = %s', (org_id,))
+        db.commit()

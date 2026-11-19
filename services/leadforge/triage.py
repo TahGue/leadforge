@@ -31,7 +31,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import FeatureUnion, Pipeline
 
-from .ai import company_text
+from .ai import CLASSIFIABLE, MAX_CONFIDENCE_THIN, company_text, is_thin
 from .config import settings
 from .store import AsyncConn, new_id
 
@@ -120,7 +120,7 @@ async def training_examples(conn: AsyncConn) -> dict[str, list[tuple[str, str | 
     rows = await (
         await conn.execute(
             """
-            SELECT DISTINCT ON (c.id) c."organizationId", c.name, c.description, c.industry AS "industryLabel",
+            SELECT DISTINCT ON (c.id) c."organizationId", c.name, c.description, c.industry AS "industryLabel", c.website,
                    (SELECT string_agg(e."extractedValue", ' | ') FROM "SourceEvidence" e
                     WHERE e."companyId" = c.id AND e."fieldName" = 'site_name') AS site_name,
                    ci."industryId" AS code
@@ -135,7 +135,7 @@ async def training_examples(conn: AsyncConn) -> dict[str, list[tuple[str, str | 
     none_rows = await (
         await conn.execute(
             """
-            SELECT c."organizationId", c.name, c.description, c.industry AS "industryLabel",
+            SELECT c."organizationId", c.name, c.description, c.industry AS "industryLabel", c.website,
                    (SELECT string_agg(e."extractedValue", ' | ') FROM "SourceEvidence" e
                     WHERE e."companyId" = c.id AND e."fieldName" = 'site_name') AS site_name,
                    NULL AS code
@@ -158,19 +158,18 @@ async def pending_companies(conn: AsyncConn, organization_id: str, seen: set[str
     """Unclassified companies this model has not looked at yet (same selection as the LLM queue)."""
     rows = await (
         await conn.execute(
-            """
-            SELECT c.id, c.name, c.description, c.industry AS "industryLabel",
+            f"""
+            SELECT c.id, c.name, c.description, c.industry AS "industryLabel", c.website,
                    (SELECT string_agg(e."extractedValue", ' | ') FROM "SourceEvidence" e
                     WHERE e."companyId" = c.id AND e."fieldName" = 'site_name') AS site_name
             FROM "Company" c
-            WHERE c."organizationId" = %s AND c."deletedAt" IS NULL
-              AND c.description IS NOT NULL AND length(c.description) > 30
+            WHERE c."organizationId" = %s AND {CLASSIFIABLE}
               AND NOT (c.id = ANY(%s))
               AND NOT EXISTS (SELECT 1 FROM "CompanyIndustry" ci WHERE ci."companyId" = c.id)
               AND NOT EXISTS (SELECT 1 FROM "SourceEvidence" e WHERE e."companyId" = c.id AND e."fieldName" = 'ai_classification_attempt')
             ORDER BY c."updatedAt" DESC
             LIMIT %s
-            """,
+            """,  # noqa: S608 - CLASSIFIABLE is a constant fragment
             (organization_id, list(seen), limit),
         )
     ).fetchall()
@@ -217,14 +216,18 @@ class Triage:
                     seen.add(row["id"])
                     stats["deferred"] += 1
                     continue
-                await record(conn, row["id"], model, prediction, outcome)
+                await record(conn, row["id"], model, prediction, outcome, thin=is_thin(row))
                 stats[outcome] += 1
             await conn.commit()
         return stats
 
 
-async def record(conn: AsyncConn, company_id: str, model: TriageModel, prediction: Prediction, outcome: str) -> None:
+async def record(
+    conn: AsyncConn, company_id: str, model: TriageModel, prediction: Prediction, outcome: str, thin: bool = False
+) -> None:
     terms = ", ".join(f'"{term}"' for term in prediction.terms)
+    cap = min(MAX_CONFIDENCE, MAX_CONFIDENCE_THIN) if thin else MAX_CONFIDENCE
+    note = ", name and domain only" if thin else ""
     if outcome == "industry":
         await conn.execute(
             """
@@ -232,8 +235,8 @@ async def record(conn: AsyncConn, company_id: str, model: TriageModel, predictio
             VALUES (%s, %s, %s, true, %s, 'MODEL', %s, now(), now())
             ON CONFLICT ("companyId", "industryId") DO NOTHING
             """,
-            (new_id(), company_id, prediction.code, min(prediction.probability, MAX_CONFIDENCE),
-             f"terms {terms} ({model.name}, p={prediction.probability:.2f})"),
+            (new_id(), company_id, prediction.code, min(prediction.probability, cap),
+             f"terms {terms} ({model.name}, p={prediction.probability:.2f}{note})"),
         )
     else:
         # Same audit trail as an LLM attempt, so the LLM queue skips it.

@@ -59,3 +59,15 @@ def test_ollama_client_requests_json_format() -> None:
     content = asyncio.run(run())
     assert json.loads(content)["industry_code"] is None
     assert seen["format"] == "json" and seen["model"] == "test-model" and seen["stream"] is False
+
+
+def test_company_text_includes_the_website_domain() -> None:
+    from leadforge.ai import company_text, is_thin, website_domain
+
+    assert website_domain("https://www.oliorossi.it/chi-siamo") == "oliorossi.it"
+    assert website_domain("frantoiobianchi.com") == "frantoiobianchi.com"
+    assert website_domain(None) is None
+    row = {"name": "Olio Rossi", "website": "https://www.oliorossi.it/", "description": None}
+    assert "oliorossi.it" in company_text(row)
+    assert is_thin(row)
+    assert not is_thin({"description": "Produciamo olio extravergine di oliva dal 1950 in Toscana."})

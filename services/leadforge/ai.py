@@ -14,6 +14,7 @@ import json
 import logging
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError
@@ -104,28 +105,56 @@ async def taxonomy(conn: AsyncConn) -> list[dict[str, Any]]:
     return list(rows)
 
 
+MIN_DESCRIPTION = 30
+# Confidence caps: a decision from the name and domain alone is weaker than one from a description.
+MAX_CONFIDENCE = 0.7
+MAX_CONFIDENCE_THIN = 0.5
+
+# Companies worth classifying: a usable description, or a site we crawled successfully,
+# where the name and domain are the evidence (many small producers publish no description).
+# A fixed SQL fragment (no user input) shared by the LLM and triage queues; 30 = MIN_DESCRIPTION.
+CLASSIFIABLE = """c."deletedAt" IS NULL AND (
+                (c.description IS NOT NULL AND length(c.description) > 30)
+                OR (c.website IS NOT NULL AND EXISTS (SELECT 1 FROM "CrawlJob" j
+                    WHERE j."companyId" = c.id AND j.status IN ('SUCCEEDED', 'PARTIAL'))))"""
+
+
 async def companies_to_classify(conn: AsyncConn, limit: int) -> list[dict[str, Any]]:
     rows = await (
         await conn.execute(
-            """
-            SELECT c.id, c.name, c.description, c.industry AS "industryLabel",
+            f"""
+            SELECT c.id, c.name, c.description, c.industry AS "industryLabel", c.website,
                    (SELECT string_agg(e."extractedValue", ' | ') FROM "SourceEvidence" e
                     WHERE e."companyId" = c.id AND e."fieldName" = 'site_name') AS site_name
             FROM "Company" c
-            WHERE c."deletedAt" IS NULL AND c.description IS NOT NULL AND length(c.description) > 30
+            WHERE {CLASSIFIABLE}
               AND NOT EXISTS (SELECT 1 FROM "CompanyIndustry" ci WHERE ci."companyId" = c.id)
               AND NOT EXISTS (SELECT 1 FROM "SourceEvidence" e WHERE e."companyId" = c.id AND e."fieldName" = 'ai_classification_attempt')
             ORDER BY c."updatedAt" DESC
             LIMIT %s
-            """,
+            """,  # noqa: S608 - CLASSIFIABLE is a constant fragment
             (limit,),
         )
     ).fetchall()
     return list(rows)
 
 
+def website_domain(website: str | None) -> str | None:
+    """Host name without scheme or www: "https://www.oliorossi.it/x" -> "oliorossi.it"."""
+    if not website:
+        return None
+    host = urlsplit(website if "://" in website else f"https://{website}").hostname or ""
+    return host.removeprefix("www.") or None
+
+
+def is_thin(row: dict[str, Any]) -> bool:
+    """No usable description: only the name and domain speak for the company."""
+    return len((row.get("description") or "").strip()) <= MIN_DESCRIPTION
+
+
 def company_text(row: dict[str, Any]) -> str:
-    return " \n".join(str(v) for v in (row.get("name"), row.get("site_name"), row.get("industryLabel"), row.get("description")) if v)[:4000]
+    fields = (row.get("name"), row.get("site_name"), website_domain(row.get("website")), row.get("industryLabel"), row.get("description"))
+    return " \n".join(str(v) for v in fields if v)[:4000]
 
 
 async def classify_batch(conn: AsyncConn, client: OllamaClient, limit: int | None = None) -> dict[str, int]:
@@ -162,7 +191,9 @@ async def classify_batch(conn: AsyncConn, client: OllamaClient, limit: int | Non
                 VALUES (%s, %s, %s, true, %s, 'AI', %s, now(), now())
                 ON CONFLICT ("companyId", "industryId") DO NOTHING
                 """,
-                (new_id(), row["id"], industry["id"], min(verdict.answer.confidence, 0.7), f'"{verdict.answer.evidence}" ({client.model})'),
+                (new_id(), row["id"], industry["id"],
+                 min(verdict.answer.confidence, MAX_CONFIDENCE_THIN if is_thin(row) else MAX_CONFIDENCE),
+                 f'"{verdict.answer.evidence}" ({client.model}{", name and domain only" if is_thin(row) else ""})'),
             )
             if verdict.answer.language:
                 await conn.execute(
