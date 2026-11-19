@@ -23,6 +23,21 @@ beforeAll(async () => {
     data: { organizationId, name: "Sweep project", status: "RUNNING", geographicMode: "WORLDWIDE", settings: {} },
   });
   projectId = project.id;
+  // A paused project's older backlog, larger than one sweep batch, must not starve running projects.
+  const paused = await prisma.discoveryProject.create({
+    data: { organizationId, name: "Paused backlog", status: "PAUSED", geographicMode: "WORLDWIDE", settings: {} },
+  });
+  await prisma.companyCandidate.createMany({
+    data: Array.from({ length: 250 }, (_, i) => ({
+      organizationId,
+      projectId: paused.id,
+      sourceId,
+      sourceRecordId: `paused-${i}`,
+      name: `Paused ${i}`,
+      website: `https://paused-${stamp}-${i}.se/`,
+      createdAt: new Date(Date.UTC(2020, 0, 1)),
+    })),
+  });
   const run = await prisma.discoveryRun.create({
     data: { organizationId, projectId, sourceId, status: "SUCCEEDED", candidatesFound: 1, finishedAt: new Date() },
   });

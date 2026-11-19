@@ -53,6 +53,22 @@ The crawler pauses a project after `stopAfterBlocked` sites refuse access (spec 
 - Redis down: health shows `redis: error`. Orchestration continues from the Postgres sweep every `WORKER_POLL_MS`. Restart Redis; nothing is lost.
 - Dead letters: jobs exhausted in BullMQ go to the `dead-letter` queue (visible on **Jobs**). The underlying rows stay in Postgres and are retried by the sweep.
 
+## Alerts
+
+Rules: `infrastructure/monitoring/alerts.yml` (see [deployment](./deployment.md#7-monitoring)).
+
+| Alert | First steps |
+| --- | --- |
+| `LeadForgeWebDown` | `docker compose ps web`; `docker compose logs --tail=200 web`; check `/api/v1/health` (database, PostGIS, Redis). Restart web once the cause is known. |
+| `LeadForgeCrawlerStalled` | `docker compose --profile crawler ps crawler`; look for `worker start` and errors in its logs; check Postgres connectivity from the crawler. Stuck `RUNNING` jobs re-queue after `WORKER_STALE_RUNNING_MINUTES`. |
+| `LeadForgeCrawlFailuresHigh` | **Jobs → failed**: group by error code. Network-wide failures point at DNS/egress; one site's failures are normal. |
+| `LeadForgePolicyStopsSpike` | Follow "A project paused itself". Never bulk re-queue policy stops. |
+| `LeadForgeContactsWithoutEvidence` | Find them: contacts with no `SourceEvidence` and no `sourceUrl`. Add evidence or delete them; every contact must be traceable. |
+
+## Large imports
+
+Imports over 500 rows are staged at once and normalized by the worker in batches (`NORMALIZE_CONCURRENCY`, default 8). Progress shows on the import's project. If the worker stops, staged rows stay `PENDING` and resume on restart; re-sending the same file with the same idempotency key returns the original import.
+
 ## Retention
 
 Daily in the worker: rejected extraction candidates (`RETENTION_EXTRACTION_CANDIDATES_DAYS`), processed staging rows (`RETENTION_STAGING_DAYS`), audit entries (`RETENTION_AUDIT_DAYS`), expired sessions, and per-source observation retention. Hourly in the crawler: raw page artifacts (`ARTIFACT_RETENTION_DAYS`). Suppressions are never deleted.

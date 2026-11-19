@@ -537,36 +537,85 @@ export async function processCandidate(candidateId: string, contextCache?: Map<s
       });
       return { status, companyId, crawlJobId, duplicateOf };
     },
-    { timeout: 30_000 },
+    // maxWait: with NORMALIZE_CONCURRENCY transactions sharing a small pool, wait for a
+    // connection instead of failing (and rejecting the candidate) after Prisma's 2 s default.
+    { timeout: 30_000, maxWait: 30_000 },
   );
 
   if (result.status === "REJECTED") await reject(result.reason);
   return result;
 }
 
-/** Process pending candidates in arrival order. Returns how many were handled. */
+type PendingRow = { id: string; projectId: string; website: string | null; name: string; registrationNumber: string | null };
+
+/**
+ * Split candidates into groups that can be normalized in parallel: any two
+ * candidates that could merge (same registrable domain or registration number)
+ * or be flagged as lookalikes (same normalized name) land in one group, which
+ * is processed in arrival order. Union-find over those keys.
+ */
+export function conflictGroups<T extends Omit<PendingRow, "projectId">>(rows: T[]): T[][] {
+  const parent = rows.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
+  const owner = new Map<string, number>();
+  rows.forEach((row, i) => {
+    const domain = row.website ? (registrableDomain(row.website) ?? row.website.toLowerCase()) : null;
+    const registration = normalizeRegistrationNumber(row.registrationNumber);
+    const keys = [domain && `d:${domain}`, registration && `r:${registration}`, `n:${normalizeCompanyName(row.name)}`];
+    for (const key of keys) {
+      if (!key) continue;
+      const seen = owner.get(key);
+      if (seen === undefined) owner.set(key, i);
+      else parent[find(i)] = find(seen);
+    }
+  });
+  const groups = new Map<number, T[]>();
+  rows.forEach((row, i) => {
+    const root = find(i);
+    const group = groups.get(root) ?? [];
+    group.push(row);
+    groups.set(root, group);
+  });
+  return [...groups.values()];
+}
+
+/**
+ * Process pending candidates. Returns how many were handled.
+ * Independent candidates run NORMALIZE_CONCURRENCY at a time (default 8); a
+ * project whose remaining company cap is smaller than its share of the batch is
+ * processed sequentially so the cap stays exact.
+ */
 export async function processPendingCandidates(limit = 200, projectId?: string): Promise<number> {
   const pending = await prisma.companyCandidate.findMany({
     where: {
       status: "PENDING",
       ...(projectId ? { projectId } : {}),
       // Never normalize for a paused project: pause must stop new work.
-      // (Cancelled projects are drained to REJECTED.)
+      // (Cancelled projects are drained to REJECTED.) Filtering here, not after the
+      // fetch, keeps a paused project's backlog from filling every batch.
+      project: { status: { in: ["RUNNING", "CANCELLED"] } },
     },
-    select: { id: true, projectId: true },
+    select: { id: true, projectId: true, website: true, name: true, registrationNumber: true },
     orderBy: [{ createdAt: "asc" }, { sourceRecordId: "asc" }],
     take: limit,
   });
   if (!pending.length) return 0;
   const projects = await prisma.discoveryProject.findMany({
     where: { id: { in: [...new Set(pending.map((p) => p.projectId))] } },
-    select: { id: true, status: true },
+    select: { id: true, status: true, maxCompanies: true, _count: { select: { companies: true } } },
   });
   const active = new Set(projects.filter((p) => p.status === "RUNNING" || p.status === "CANCELLED").map((p) => p.id));
+  const runnable = pending.filter((row) => active.has(row.projectId));
+  const share = new Map<string, number>();
+  for (const row of runnable) share.set(row.projectId, (share.get(row.projectId) ?? 0) + 1);
+  const roomy = new Set(
+    projects
+      .filter((p) => p.status === "CANCELLED" || p.maxCompanies - p._count.companies >= (share.get(p.id) ?? 0))
+      .map((p) => p.id),
+  );
+
   const cache = new Map<string, ProjectContext>();
-  let handled = 0;
-  for (const row of pending) {
-    if (!active.has(row.projectId)) continue;
+  const handleOne = async (row: PendingRow) => {
     try {
       await processCandidate(row.id, cache);
     } catch (error) {
@@ -576,7 +625,21 @@ export async function processPendingCandidates(limit = 200, projectId?: string):
         data: { status: "REJECTED", rejectReason: `error: ${(error as Error).message.slice(0, 200)}`, processedAt: new Date() },
       });
     }
-    handled += 1;
-  }
-  return handled;
+  };
+
+  const concurrency = Math.max(1, Number(process.env.NORMALIZE_CONCURRENCY ?? 8));
+  const parallel = concurrency > 1 ? runnable.filter((row) => roomy.has(row.projectId)) : [];
+  const parallelIds = new Set(parallel.map((row) => row.id));
+  const groups = conflictGroups(parallel);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, groups.length) }, async () => {
+      while (next < groups.length) {
+        const group = groups[next++]!;
+        for (const row of group) await handleOne(row);
+      }
+    }),
+  );
+  for (const row of runnable) if (!parallelIds.has(row.id)) await handleOne(row);
+  return runnable.length;
 }

@@ -211,7 +211,7 @@ def test_crawl_job_writes_pages_evidence_and_contacts(db: psycopg.Connection[dic
     assert {p["pageKind"] for p in pages if p["parseStatus"] == "PARSED"} == {"HOME", "CONTACT"}
 
     candidates = db.execute(
-        'SELECT kind, "normalizedValue", method, status FROM "ExtractionCandidate" WHERE "crawlJobId" = %s', (job_id,)
+        'SELECT id, kind, "normalizedValue", method, status FROM "ExtractionCandidate" WHERE "crawlJobId" = %s', (job_id,)
     ).fetchall()
     by_value = {c["normalizedValue"]: c for c in candidates}
     assert by_value["sales@fixture.test"]["status"] == "PROMOTED"  # mailto, role account
@@ -233,6 +233,12 @@ def test_crawl_job_writes_pages_evidence_and_contacts(db: psycopg.Connection[dic
     assert company is not None and company["websiteStatus"] == "REACHABLE"
     assert company["hasContactPage"] is True
     assert company["description"] == "Fixture AB builds test fixtures."
+
+    # Gate G5: the database refuses a promoted candidate that has lost its source page.
+    db.commit()
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db.execute('UPDATE "ExtractionCandidate" SET "pageUrl" = NULL WHERE id = %s', (by_value["sales@fixture.test"]["id"],))
+    db.rollback()
 
 
 def test_crawl_of_a_suppressed_domain_is_cancelled_without_fetching(db: psycopg.Connection[dict[str, Any]], server: str) -> None:

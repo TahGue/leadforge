@@ -73,6 +73,9 @@ jobs:
       - name: Schema matches migrations
         run: node scripts/check-schema-drift.mjs
 
+      - name: Cursor pagination only (no offset)
+        run: node scripts/check-pagination.mjs
+
       - name: Reference data and seed
         run: |
           node packages/database/prisma/reference.mjs
@@ -81,8 +84,9 @@ jobs:
       - name: Typecheck
         run: pnpm -r --if-present typecheck
 
-      - name: Unit tests (compliance, pipeline)
+      - name: Unit tests (shared, compliance, pipeline)
         run: |
+          pnpm --filter @leadforge/shared test
           pnpm --filter @leadforge/compliance test
           pnpm --filter @leadforge/pipeline test
 
@@ -157,6 +161,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate (all profiles, dev overlay)
         run: docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile crawler --profile ai --profile monitoring config -q
+      - name: Alert rules valid and tested with induced failures
+        run: |
+          docker run --rm -v "$PWD/infrastructure/monitoring:/m" --entrypoint promtool prom/prometheus:v3.5.0 check rules /m/alerts.yml
+          docker run --rm -v "$PWD/infrastructure/monitoring:/m" --entrypoint promtool prom/prometheus:v3.5.0 test rules /m/alerts.test.yml
 
   docker:
     name: Docker - build and smoke test stack

@@ -83,7 +83,9 @@ openssl rand -base64 24 > infrastructure/monitoring/grafana-admin-password
 docker compose --profile monitoring up -d
 ```
 
-Grafana runs at http://127.0.0.1:3001 with the "LeadForge pipeline" dashboard. All services log JSON to stdout (`docker compose logs`).
+Grafana runs at http://127.0.0.1:3001 with the "LeadForge pipeline" dashboard. All services log JSON to stdout (`docker compose logs`); connection-string passwords, bearer tokens and session cookies are redacted before logging.
+
+Prometheus loads the alert rules in `infrastructure/monitoring/alerts.yml`: web down, crawler stalled with a backlog, crawl failure spike, policy-stop spike, contacts without evidence. CI unit-tests every rule against induced failures (`alerts.test.yml`). Firing alerts appear at Prometheus `/alerts` and in Grafana; to page a person, add an Alertmanager or a Grafana contact point (email, Slack, etc.).
 
 ## 8. Backups
 

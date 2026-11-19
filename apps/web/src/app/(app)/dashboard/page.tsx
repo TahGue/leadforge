@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@leadforge/database";
 import { limits, queueCounts } from "@leadforge/pipeline";
 import { requireSession } from "@/lib/auth";
+import { cached } from "@/lib/cache";
 import { Card, Empty, PageHeader, Stat, StatusBadge, formatDate } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -16,11 +17,13 @@ export default async function DashboardPage() {
       prisma.company.count({ where: { organizationId: org, deletedAt: null } }),
       prisma.contact.count({ where: { organizationId: org, deletedAt: null } }),
       prisma.contact.count({ where: { organizationId: org, deletedAt: null, OR: [{ evidence: { some: {} } }, { sourceUrl: { not: null } }] } }),
-      prisma.emailAddress.groupBy({
-        by: ["status"],
-        where: { contacts: { some: { contact: { organizationId: org } } } },
-        _count: { _all: true },
-      }),
+      cached(`dashboard:email-status:${org}`, 60_000, () =>
+        prisma.emailAddress.groupBy({
+          by: ["status"],
+          where: { contacts: { some: { contact: { organizationId: org } } } },
+          _count: { _all: true },
+        }),
+      ),
       prisma.crawlJob.groupBy({ by: ["status"], where: { organizationId: org }, _count: { _all: true } }),
       prisma.companyDuplicateCandidate.count({ where: { organizationId: org, status: "OPEN" } }),
       prisma.company.count({ where: { organizationId: org, deletedAt: null, lastSeenAt: { lt: staleBefore } } }),

@@ -144,7 +144,11 @@ Runbooks live in `infrastructure/monitoring/runbooks/`; a tabletop exercise is p
 Status at the realignment release (2026-11-18):
 
 - [x] SSRF suite green, including connection-time rebinding (`tests/test_net.py`, `tests/test_safety.py`)
-- [x] Tenant scoping on every endpoint (`organizationId` in every query; cross-org test in `api.integration.test.ts`)
+- [x] Tenant scoping on every endpoint (`organizationId` in every query); tenant-leak suite with two real sessions over companies, contacts, discovery projects and sources: detail, list, update and delete (`tenant-isolation.integration.test.ts`)
+- [x] Session cookie read correctly when other cookies precede it (fixed 2026-11-18: the parser only matched `lf_session` as the first cookie; regression-tested)
+- [x] No secrets in logs: URL passwords, bearer tokens and session cookies redacted in web, worker and crawler logs (tested)
+- [x] 10,000-URL SSRF fuzz (literals, IPv4-mapped IPv6, mixed public/private DNS answers): zero private targets (`tests/test_ssrf_fuzz.py`)
+- [x] Bounce-ingest key compared in constant time; every mutating API route audited or explicitly exempted (`audit-coverage.test.ts`)
 - [x] No `dangerouslySetInnerHTML` in the app; extracted text is rendered as text by React
 - [x] Secret scan clean in CI (`scripts/secret-scan.mjs`); `.env` ignored
 - [x] Metrics endpoint private (404 without `METRICS_TOKEN`, 401 on a wrong token; tested)
@@ -152,4 +156,7 @@ Status at the realignment release (2026-11-18):
 - [x] Restore drill verified ([runbooks](./runbooks.md#restore-drill-log)); encrypting the offsite copy is the operator's job
 - [x] Same-origin check on cookie-authenticated mutations; secure cookies when `APP_URL` is https
 - [x] Dependency audit clean and enforced in CI (`pnpm audit --prod`, `pip-audit`); 2026-11-18 fixed zod (GHSA-mrhx-c7xc-m3w5, upgraded to 4.6.7) and deepmerge-ts (GHSA-ggr8-5vv4-36mx, override 8.0.2)
-- [ ] Open-relay and mail tests: Phase 9 only
+
+Deferred to the Phase 9 release (campaigns are frozen and not part of this release):
+
+- Open-relay and mail tests

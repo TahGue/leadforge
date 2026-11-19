@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { ApiError, type ErrorCode } from "@leadforge/shared";
+import { ApiError, describeError, type ErrorCode } from "@leadforge/shared";
 import {
   SESSION_COOKIE,
   requireRole,
@@ -29,7 +29,7 @@ export function handleError(error: unknown): NextResponse {
   if (error instanceof ApiError) {
     return problem(error.status, error.code, error.message, error.details);
   }
-  console.error("api_error", error);
+  console.error(JSON.stringify({ ts: new Date().toISOString(), level: "error", service: "web", event: "api_error", error: describeError(error) }));
   return problem(500, "INTERNAL", "Internal server error");
 }
 

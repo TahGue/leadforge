@@ -30,9 +30,30 @@ Environment: PostGIS 16-3.5 in Docker Desktop on a Windows 11 workstation, defau
 
 Every hot query is under the 500 ms p50 budget, by two orders of magnitude.
 
-## Toward one million
+## One million companies
 
-- The heaviest query is the dashboard's email-status aggregation (a join through contacts). At 1M rows, expect roughly 0.5 s: cache it per minute, or keep a rollup table updated by the worker.
+Same script and machine, 2026-11-18: `generate --companies 1000000` took 152 s, then `measure`, then `cleanup`.
+
+| Query | p50 | max |
+| --- | --- | --- |
+| Companies list, newest first (page of 50) | 5.3 ms | 6.0 ms |
+| Companies by country (count) | 8.8 ms | 9.0 ms |
+| Companies in a city (page of 50) | 3.9 ms | 4.1 ms |
+| Companies in a subsector (page of 50) | 2.5 ms | 2.7 ms |
+| Full-text search | 1.7 ms | 2.1 ms |
+| Radius query, 25 km (PostGIS) | 32.0 ms | 44.2 ms |
+| Contacts with MX-valid email (page of 50) | 2.9 ms | 3.2 ms |
+| Dashboard email-status breakdown | 273.3 ms | 303.5 ms |
+| Stale companies count | 124.8 ms | 204.5 ms |
+
+Every list and search query stays under 50 ms at 1M rows. The dashboard email-status aggregation (a join through contacts) is the only query near 300 ms, so the dashboard now caches it per organization for 60 s (`apps/web/src/lib/cache.ts`); a worker-maintained rollup table is the next step if it grows further.
+
+## Importing 100,000 companies
+
+`pnpm --filter @leadforge/worker exec tsx scripts/import-load-test.ts 100000`, same machine, 2026-11-18: staging took 8.8 s; normalization (geography, taxonomy, dedup, evidence, crawl job per domain) took 525 s with `NORMALIZE_CONCURRENCY=8`, 8.9 min in total. All 100,000 rows became companies. Halfway through, the run simulated a crash; the 50,000 pending rows resumed from Postgres. Before parallel normalization the same path ran at about 28 ms per row (about 48 min per 100,000). Raise `NORMALIZE_CONCURRENCY` on hosts with more cores and a larger Postgres connection pool.
+
+## Toward ten million
+
 - Crawl throughput, not the database, is the bottleneck: at the default 6 requests/minute/domain and 4 concurrent jobs, 100,000 companies × 12 pages take about 83 hours of crawling. Scale with more crawler processes (one domain per job is enforced), not higher per-site rates.
 - Partition `CrawlPage`, `SourceEvidence` and `AuditLog` by month only when measured volume calls for it (spec §15).
 - Add OpenSearch only if Postgres FTS becomes a measured bottleneck (ADR-0015).

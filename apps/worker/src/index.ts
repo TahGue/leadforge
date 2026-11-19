@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import { Worker, type Job } from "bullmq";
 import { prisma } from "@leadforge/database";
+import { describeError } from "@leadforge/shared";
 import {
   QUEUES,
   applyRetention,
@@ -45,7 +46,7 @@ const log = (event: string, fields: Record<string, unknown> = {}) =>
   console.log(JSON.stringify({ ts: new Date().toISOString(), level: "info", service: "worker", event, ...fields }));
 const logError = (event: string, error: unknown, fields: Record<string, unknown> = {}) =>
   console.error(
-    JSON.stringify({ ts: new Date().toISOString(), level: "error", service: "worker", event, error: (error as Error).message, ...fields }),
+    JSON.stringify({ ts: new Date().toISOString(), level: "error", service: "worker", event, error: describeError(error).message, ...fields }),
   );
 
 /** Re-queue jobs whose worker died mid-run (lease expiry). Policy-blocked jobs are never touched. */

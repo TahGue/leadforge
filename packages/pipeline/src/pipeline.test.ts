@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { discoveryProjectSettings, hostFromUrl, normalizeCompanyName, normalizeRegistrationNumber, registrableDomain } from "@leadforge/shared";
 import { inScope, type ProjectScope, type ResolvedLocation, type ScopeLocation } from "./geo";
 import { naceCoverage, naceSection, normalizeNaceCode, industryAllowed } from "./taxonomy";
-import { precheck } from "./normalize";
+import { conflictGroups, precheck } from "./normalize";
 import { canTransition, requiresApproval } from "./projects";
 import { checkDomain, providerCategory, summarize, type Resolver } from "./verify";
 import { combine, companyScore } from "./scoring";
@@ -203,5 +203,33 @@ describe("scoring", () => {
     expect(score.score).toBeLessThanOrEqual(1);
     expect(score.components.map((c) => c.name)).toContain("corroboration");
     expect(combine([]).score).toBe(0);
+  });
+});
+
+describe("conflictGroups", () => {
+  const row = (id: string, website: string | null, name: string, registrationNumber: string | null = null) => ({
+    id,
+    website,
+    name,
+    registrationNumber,
+  });
+
+  it("keeps candidates that could merge or look alike in one ordered group", () => {
+    const groups = conflictGroups([
+      row("a", "https://www.alpha.se", "Alpha AB"),
+      row("b", "https://beta.se", "Beta AB", "556677-8899"),
+      row("c", "http://shop.alpha.se/x", "Alpha Shop"), // same registrable domain as a
+      row("d", "https://gamma.se", "Gamma", "5566778899"), // same registration number as b
+      row("e", "https://delta.se", "Alpha AB"), // same normalized name as a
+      row("f", "https://epsilon.se", "Epsilon"),
+    ]);
+    const ids = groups.map((g) => g.map((r) => r.id).join(""));
+    expect(ids.sort()).toEqual(["ace", "bd", "f"]);
+  });
+
+  it("puts every candidate in exactly one group", () => {
+    const rows = Array.from({ length: 50 }, (_, i) => row(`r${i}`, `https://c${i % 7}.se`, `Name ${i % 11}`));
+    const flat = conflictGroups(rows).flat().map((r) => r.id);
+    expect(flat.sort()).toEqual(rows.map((r) => r.id).sort());
   });
 });

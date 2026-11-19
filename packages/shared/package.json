@@ -10,7 +10,8 @@
   },
   "scripts": {
     "lint": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --pool=threads"
   },
   "dependencies": {
     "tldts": "7.5.4",

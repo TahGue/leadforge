@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import json
 import logging
+import re
 import signal
 import sys
 import time
@@ -26,18 +27,31 @@ from .net import make_client
 from .robots import AsyncRobotsCache
 from .store import connect
 
+_SECRET_PATTERNS = [
+    (re.compile(r"([a-z][a-z0-9+.-]*://[^\s:/@]*):[^\s@/]+@", re.IGNORECASE), r"\1:***@"),
+    (re.compile(r"\b(bearer\s+)[A-Za-z0-9._~+/=-]+", re.IGNORECASE), r"\1***"),
+]
+
+
+def redact_secrets(text: str) -> str:
+    """Strip URL passwords and bearer tokens before logging (spec 26: no secret leakage)."""
+    for pattern, replacement in _SECRET_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        return json.dumps(
-            {
-                "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(record.created)),
-                "level": record.levelname.lower(),
-                "service": "crawler",
-                "logger": record.name,
-                "message": record.getMessage(),
-            }
-        )
+        entry: dict[str, Any] = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(record.created)),
+            "level": record.levelname.lower(),
+            "service": "crawler",
+            "logger": record.name,
+            "message": redact_secrets(record.getMessage()),
+        }
+        if record.exc_info:
+            entry["exception"] = redact_secrets(self.formatException(record.exc_info))
+        return json.dumps(entry)
 
 
 def configure_logging() -> None:

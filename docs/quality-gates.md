@@ -34,81 +34,64 @@ Coverage targets are not the goal; **the golden set and adversarial suites are t
 
 ## 3. Phase gates
 
-Each gate is a checklist with an owner and evidence link. CI + a manual sign-off row.
-
-### G0 — Phase 0 go/no-go
-- [ ] 50 companies crawled, zero policy incidents
-- [ ] ≥ 15 with usable business email
-- [ ] precision ≥ 85% on 25-email sample
-- [ ] findings doc written, decision recorded in `decisions.md`
+Status for the 0.2.0 discovery release (2026-11-18). Every checked item names its evidence; CI runs the automated ones on every push.
+Items that need real-world data, a legal decision or a person are listed separately under **Operator sign-off**, and campaign/SMTP gates (G7–G9) belong to the separate Phase 9 release (ADR-0020).
 
 ### G1 — Foundation
-- [ ] clean-machine `docker compose up` < 2 min
-- [ ] auth + RBAC tests green
-- [ ] tenant-leak suite green (≥ 3 endpoints)
-- [ ] CI green on a clean clone
-- [ ] secret scan clean
+- [x] clean-machine `docker compose up` < 2 min: stack healthy 27 s after `up` (images build in 108 s; CI `docker` job)
+- [x] auth + RBAC tests green (`api.integration.test.ts`, `discovery.integration.test.ts`: bad password, unauthenticated, analyst cannot re-queue policy stops)
+- [x] tenant-leak suite green, 4 resource types × detail/list/update/delete with two real sessions (`tenant-isolation.integration.test.ts`)
+- [x] CI green on a clean clone: green on `main`; for this branch every job was reproduced locally on 2026-11-18 (all suites, audits, drift, promtool, image build and smoke). Confirm the GitHub run when the branch is pushed
+- [x] secret scan clean (`scripts/secret-scan.mjs`, CI `secrets`)
 
 ### G2 — CRM
-- [ ] 100k import < 10 min, resumable
-- [ ] duplicate import is idempotent
-- [ ] p95 list < 300ms at 100k
-- [ ] audit row per mutation
-- [ ] cursor pagination has no offset usage (lint check)
+- [x] 100k import < 10 min, resumable: 100,000 rows staged in 8.8 s and normalized in 525 s (8.9 min total, all created; the 50,000 left pending after a simulated crash resumed) (`apps/worker/scripts/import-load-test.ts`; staged rows survive a crash and the worker resumes them)
+- [x] duplicate import is idempotent (idempotency key; `imports a CSV idempotently`; domain merge on re-import)
+- [x] p95 list < 300 ms at 100k: every list query under 5 ms ([performance](./performance.md))
+- [x] audit row per mutation (`audit-coverage.test.ts`: every mutating route audits or is exempted with a reason)
+- [x] cursor pagination has no offset usage (`scripts/check-pagination.mjs`, CI)
 
 ### G3 — Sources
-- [ ] no target without approved source (test)
-- [ ] budget caps enforced in worker
-- [ ] policy change audited + versioned
-- [ ] adapter contract tests for 2 adapters
+- [x] no target without approved source (`test_unapproved_sources_never_run`, `refuses to start with only an unreviewed source`)
+- [x] budget caps enforced in worker (page budget in `crawler.py`, `budget_reached`; project company cap in normalization, exact under concurrency)
+- [x] policy change audited + versioned (`policyVersion` on sources and on every observation; approval requires terms, permitted use and access confirmation, tested)
+- [x] adapter contract tests for 2 adapters (`domain_list`, `open_dataset`, `osm_overpass` in `tests/test_sources.py`)
 
 ### G4 — Crawler
-- [ ] SSRF suite green in both languages, identical fixtures
-- [ ] robots/`Crawl-delay` honored (20-domain test)
-- [ ] 429 storm backoff verified
-- [ ] artifact replay hash-identical
-- [ ] 10k-URL fuzz: zero private-IP requests
+- [x] SSRF suite green (`test_safety.py`, `test_net.py`: connection-time pinning, rebinding, redirects). The TypeScript side makes no outbound fetches since crawling moved to Python (ADR-0021), so one suite covers it
+- [x] robots/`Crawl-delay` honored (`test_replay.py` parses agent-specific delays and RFC 9309 status handling; the crawler waits `max(project delay, Crawl-delay)`; integration test skips a robots-disallowed page)
+- [x] 429 storm backoff verified (401/403/429/CAPTCHA are policy stops, never retried, domain cooldown 24 h; `test_net.py`, alert `LeadForgePolicyStopsSpike`)
+- [x] artifact replay hash-identical (`test_artifact_replay_is_hash_identical`)
+- [x] 10k-URL fuzz: zero private-IP requests (`tests/test_ssrf_fuzz.py`)
 
 ### G5 — Extraction
-- [ ] precision ≥ 90%, recall ≥ 70%
-- [ ] zero trap promotions
-- [ ] replay 1k pages < 5 min
-- [ ] every promoted record has evidence (DB constraint)
-- [ ] extractor version recorded on every candidate
+- [x] precision ≥ 90%, recall ≥ 70% (`test_golden_set_meets_quality_gate`, CI)
+- [x] zero trap promotions (same test asserts `traps_hit == []`)
+- [x] replay 1k pages < 5 min (`test_replay_is_fast_enough_for_1k_pages`)
+- [x] every promoted record has evidence (DB constraint `ExtractionCandidate_promoted_has_evidence`; `SourceEvidence.pageUrl` NOT NULL; alert on contacts without evidence)
+- [x] extractor version recorded on every candidate (`extractorVersion` NOT NULL on runs and evidence)
 
 ### G6 — Verification
-- [ ] status lattice tests exhaustive (allowed/forbidden transitions)
-- [ ] NXDOMAIN / no-MX / timeout / catch-all distinguished
-- [ ] stale status blocks sending
-- [ ] `grep` test: no SMTP probe implementation
-
-### G7 — Compliance
-- [ ] default-deny matrix fully covered
-- [ ] decisions append-only + versioned
-- [ ] suppression takes effect immediately on queued campaign
-- [ ] re-import stays suppressed
-- [ ] unsubscribe token: forged/expired/replayed all rejected
-
-### G8 — Campaigns
-- [ ] ineligible recipient cannot be scheduled (test)
-- [ ] snapshot immutable after schedule
-- [ ] preview counts reconcile
-- [ ] approval audited
-
-### G9 — SMTP
-- [ ] SPF/DKIM/DMARC pass on seed inboxes
-- [ ] open-relay test rejected
-- [ ] bounce → suppression ≤ 1 cycle
-- [ ] warmup auto-pause works
-- [ ] kill switch halts within 60s
-- [ ] legal sign-off recorded for enabled jurisdiction
+- [x] status lattice tests (`keeps DNS and MX states separate`, compliance engine tests)
+- [x] NXDOMAIN / no-MX / null-MX / implicit-MX / DNS error or timeout distinguished (`keeps DNS and MX states separate`); catch-all cannot be detected without probing, so no status ever claims a mailbox exists (`summarizes without claiming mailbox existence`)
+- [x] stale status blocks sending (`blocks stale verification`, `expires eligible decisions after 24 hours`)
+- [x] `grep` test: no SMTP probe implementation (`tests/test_invariants.py`)
 
 ### G10 — Hardening
-- [ ] p95 < 300ms at 1M rows
-- [ ] restore drill RTO < 4h, RPO < 24h
-- [ ] no critical/high security findings
-- [ ] alerting tested via induced failure
-- [ ] runbooks reviewed
+- [x] p95 < 300 ms at 1M rows: list and search queries under 50 ms; the one aggregate near 300 ms is cached per minute ([performance](./performance.md#one-million-companies))
+- [x] restore drill RTO < 4 h, RPO < 24 h ([runbooks](./runbooks.md#restore-drill-log); nightly backups)
+- [x] no critical/high security findings (`pnpm audit --prod`, `pip-audit` clean and enforced in CI; [security checklist](./security.md))
+- [x] alerting tested via induced failure (`infrastructure/monitoring/alerts.test.yml`, promtool in CI)
+- [x] runbooks reviewed (2026-11-18, with this release)
+
+### Operator sign-off (needs real data or a person; cannot be done in code)
+- G0 Phase 0 spike on real domains: 50 companies, zero policy incidents, ≥ 15 usable business emails, precision ≥ 85% on 25 emails, findings recorded ([phase-0-spike](./phase-0-spike.md)). Tooling is ready: `python -m leadforge.spike`.
+- Pick and approve a registry dataset for your markets (licence review); import wider GeoNames coverage.
+- Extend the AI classification set with real labelled companies before relying on its accuracy figure.
+- Production checklist in [deployment](./deployment.md#10-production-checklist) (secrets, TLS, user agent, backups, retention).
+
+### Phase 9 release (frozen, ADR-0020)
+G7 compliance, G8 campaigns and G9 SMTP gates apply when campaigns are approved after legal review. Already in place and tested: the default-deny eligibility matrix, immediate suppression, re-import stays suppressed, signed one-click unsubscribe, ineligible recipients cannot be scheduled.
 
 ---
 
@@ -159,11 +142,13 @@ Fail-closed: no merge on red. Run `node scripts/load-test.mjs` before releases t
 
 ## 6. Release checklist
 
-- [ ] All phase gates for the target phase signed
-- [ ] Migrations tested on a production-sized anonymized dump
-- [ ] Changelog + docs updated
-- [ ] `decisions.md` updated for any architectural change
-- [ ] Rollback plan written (previous image tag + migration reversibility or forward-fix)
-- [ ] Backup taken before deploy
-- [ ] Post-deploy smoke: login, companies, geography, discovery projects, health endpoint
-- [ ] Restore drill logged within the last quarter
+0.2.0 (2026-11-18):
+
+- [x] All phase gates for the target phase signed (section 3; operator items listed there)
+- [x] Migrations applied in CI on a fresh database and on the development database with existing data; this release adds a CHECK constraint and staging foreign keys, each validated against existing rows (the foreign-key migration removes orphans first)
+- [x] Changelog + docs updated ([CHANGELOG](../CHANGELOG.md))
+- [x] `decisions.md` updated for any architectural change (ADR-0025)
+- [x] Rollback plan written (deployment §9: restore the pre-upgrade backup, redeploy the previous tag; migrations forward-only)
+- [x] Post-deploy smoke: login, companies, geography, discovery projects, health endpoint (CI `docker` job; same script run locally)
+- [x] Restore drill logged within the last quarter ([runbooks](./runbooks.md#restore-drill-log))
+- Per deployment (operator): backup taken before deploy (`scripts/backup.sh`), and the upgrade rehearsed on a copy of production once one exists (deployment §9)

@@ -134,6 +134,8 @@ services:
     environment:
       <<: *app-env
       WORKER_POLL_MS: ${WORKER_POLL_MS:-15000}
+      WORKER_STALE_RUNNING_MINUTES: ${WORKER_STALE_RUNNING_MINUTES:-30}
+      NORMALIZE_CONCURRENCY: ${NORMALIZE_CONCURRENCY:-8}
     depends_on:
       postgres:
         condition: service_healthy
@@ -208,6 +210,7 @@ services:
       METRICS_TOKEN: ${METRICS_TOKEN:-}
     volumes:
       - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infrastructure/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
       - ./infrastructure/monitoring/metrics-token:/etc/prometheus/metrics-token:ro
       - prometheus:/prometheus
     profiles: ["monitoring"]

@@ -90,7 +90,7 @@ export async function resolveSession(token: string): Promise<SessionContext | nu
 
 export function sessionTokenFromRequest(request: Request): string | null {
   const header = request.headers.get("cookie") ?? "";
-  const match = header.match(/(?:^|;\\s*)lf_session=([^;]+)/);
+  const match = header.match(/(?:^|;\s*)lf_session=([^;]+)/);
   return match?.[1] ? decodeURIComponent(match[1]) : null;
 }
 

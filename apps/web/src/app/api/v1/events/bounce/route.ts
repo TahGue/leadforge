@@ -1,9 +1,17 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { prisma } from "@leadforge/database";
 import { ApiError, bounceEvent, normalizeEmail, parseBody } from "@leadforge/shared";
 import { handleError, json } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
+
+/** Constant-time comparison, so the key cannot be recovered from response timing. */
+function sameSecret(provided: string, expected: string): boolean {
+  const a = createHash("sha256").update(provided).digest();
+  const b = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(a, b);
+}
 
 /**
  * Bounce / complaint ingestion from the MTA or a relay webhook.
@@ -13,7 +21,7 @@ export async function POST(request: NextRequest) {
   try {
     const expected = process.env.BOUNCE_INGEST_KEY;
     const provided = request.headers.get("x-leadforge-key");
-    if (!expected || provided !== expected) {
+    if (!expected || !provided || !sameSecret(provided, expected)) {
       throw new ApiError(401, "UNAUTHENTICATED", "Invalid ingestion key");
     }
 

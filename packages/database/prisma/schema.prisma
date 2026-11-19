@@ -288,6 +288,8 @@ model Organization {
   observations      SourceObservation[]
   duplicates        CompanyDuplicateCandidate[]
   savedSegments     SavedSegment[]
+  companyCandidates CompanyCandidate[]
+  domainEvents      DomainEvent[]
 }
 
 model User {
@@ -415,6 +417,7 @@ model Company {
   duplicateA   CompanyDuplicateCandidate[] @relation("DuplicateA")
   duplicateB   CompanyDuplicateCandidate[] @relation("DuplicateB")
 
+  stagedRecords CompanyCandidate[]
   @@index([organizationId, normalizedName])
   @@index([organizationId, registrationNumber])
   @@index([organizationId, updatedAt(sort: Desc), id])
@@ -606,6 +609,7 @@ model Source {
   locations     CompanyLocation[]
   industries    CompanyIndustry[]
 
+  candidates    CompanyCandidate[]
   @@unique([organizationId, name])
   @@index([organizationId, permitted])
   @@index([organizationId, policyStatus, enabled])
@@ -645,6 +649,7 @@ model DiscoveryProject {
   companies    ProjectCompany[]
   crawlJobs    CrawlJob[]
 
+  candidates   CompanyCandidate[]
   @@index([organizationId, createdAt(sort: Desc)])
   @@index([organizationId, status])
 }
@@ -1107,6 +1112,7 @@ model DomainEvent {
   payload        Json     @default("{}")
   occurredAt     DateTime @default(now())
 
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   @@index([aggregateType, aggregateId])
   @@index([occurredAt])
 }
@@ -1504,6 +1510,7 @@ model DiscoveryRun {
   source       Source              @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   observations SourceObservation[]
 
+  candidates   CompanyCandidate[]
   @@unique([projectId, sourceId])
   @@index([status, scheduledFor])
 }
@@ -1632,7 +1639,13 @@ model CompanyCandidate {
   createdAt          DateTime      @default(now())
   processedAt        DateTime?
 
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      DiscoveryProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  source       Source            @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  run          DiscoveryRun?     @relation(fields: [runId], references: [id], onDelete: SetNull)
+  company      Company?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
   @@unique([projectId, sourceId, sourceRecordId])
   @@index([status, createdAt])
   @@index([projectId, status])
+  @@index([organizationId])
 }

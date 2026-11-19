@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from "@leadforge/database";
 import { parseBody, savedSegmentCreate } from "@leadforge/shared";
 import { actorUserId, json, withAuth } from "@/lib/api";
+import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,14 @@ export const POST = withAuth(async (request, session) => {
       createdById: actorUserId(session),
     },
     update: { entity: input.entity, filters: input.filters as Prisma.InputJsonValue },
+  });
+  await audit({
+    organizationId: session.organization.id,
+    actorId: session.user.id,
+    action: "segment.save",
+    entity: "SavedSegment",
+    entityId: segment.id,
+    metadata: { name: segment.name, entity: segment.entity },
   });
   return json({ data: segment }, 201);
 }, "ANALYST");
