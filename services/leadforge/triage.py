@@ -47,7 +47,7 @@ LEARN_FROM = ("AI", "MANUAL")
 
 @dataclass
 class Prediction:
-    code: str | None  # None means "no industry fits"
+    code: str | None  # Industry id the model learned; None means "no industry fits"
     probability: float
     terms: list[str] = field(default_factory=list)
 
@@ -123,10 +123,9 @@ async def training_examples(conn: AsyncConn) -> dict[str, list[tuple[str, str | 
             SELECT DISTINCT ON (c.id) c."organizationId", c.name, c.description, c.industry AS "industryLabel",
                    (SELECT string_agg(e."extractedValue", ' | ') FROM "SourceEvidence" e
                     WHERE e."companyId" = c.id AND e."fieldName" = 'site_name') AS site_name,
-                   i.code
+                   ci."industryId" AS code
             FROM "CompanyIndustry" ci
             JOIN "Company" c ON c.id = ci."companyId"
-            JOIN "Industry" i ON i.id = ci."industryId"
             WHERE ci.method = ANY(%s) AND c."deletedAt" IS NULL
             ORDER BY c.id, (ci.method = 'MANUAL') DESC, ci."isPrimary" DESC, ci.confidence DESC
             """,
@@ -230,11 +229,11 @@ async def record(conn: AsyncConn, company_id: str, model: TriageModel, predictio
         await conn.execute(
             """
             INSERT INTO "CompanyIndustry" (id, "companyId", "industryId", "isPrimary", confidence, method, evidence, "createdAt", "updatedAt")
-            SELECT %s, %s, i.id, true, %s, 'MODEL', %s, now(), now() FROM "Industry" i WHERE i.code = %s
+            VALUES (%s, %s, %s, true, %s, 'MODEL', %s, now(), now())
             ON CONFLICT ("companyId", "industryId") DO NOTHING
             """,
-            (new_id(), company_id, min(prediction.probability, MAX_CONFIDENCE),
-             f"terms {terms} ({model.name}, p={prediction.probability:.2f})", prediction.code),
+            (new_id(), company_id, prediction.code, min(prediction.probability, MAX_CONFIDENCE),
+             f"terms {terms} ({model.name}, p={prediction.probability:.2f})"),
         )
     else:
         # Same audit trail as an LLM attempt, so the LLM queue skips it.

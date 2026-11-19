@@ -375,7 +375,18 @@ def test_triage_learns_an_organizations_labels_and_classifies_its_pending_compan
     monkeypatch.setattr(settings, "triage_min_per_class", 10)
     monkeypatch.setattr(settings, "triage_accept_probability", 0.6)
     org_id = _org(db)
-    codes = [r["code"] for r in db.execute('SELECT code FROM "Industry" WHERE code IS NOT NULL ORDER BY code LIMIT 2').fetchall()]
+    # Its own taxonomy, so the test does not depend on seed data (CI has none).
+    version_id = uuid.uuid4().hex
+    db.execute(
+        """INSERT INTO "IndustryTaxonomyVersion" (id, taxonomy, version, "publishedAt") VALUES (%s, 'test', %s, now())""",
+        (version_id, version_id),
+    )
+    codes = [uuid.uuid4().hex, uuid.uuid4().hex]  # industry ids
+    for index, industry_id in enumerate(codes):
+        db.execute(
+            """INSERT INTO "Industry" (id, "versionId", code, name) VALUES (%s, %s, %s, %s)""",
+            (industry_id, version_id, f"test.industry-{index}", f"Test industry {index}"),
+        )
     texts = {
         codes[0]: "Frantoio {n} produce olio extravergine di oliva dalle nostre olive, frantoio a freddo.",
         codes[1]: "Hotel {n} offre camere, colazione, piscina e parcheggio vicino al mare.",
@@ -395,7 +406,7 @@ def test_triage_learns_an_organizations_labels_and_classifies_its_pending_compan
             cid = company(f"{code} {n}", template.format(n=n))
             db.execute(
                 """INSERT INTO "CompanyIndustry" (id, "companyId", "industryId", "isPrimary", confidence, method, "createdAt", "updatedAt")
-                   SELECT %s, %s, id, true, 0.7, 'AI', now(), now() FROM "Industry" WHERE code = %s""",
+                   VALUES (%s, %s, %s, true, 0.7, 'AI', now(), now())""",
                 (uuid.uuid4().hex, cid, code),
             )
     pending = company("Frantoio Nuovo", "Frantoio Nuovo produce olio extravergine di oliva, frantoio a freddo dal 1950.")
@@ -415,13 +426,14 @@ def test_triage_learns_an_organizations_labels_and_classifies_its_pending_compan
         stats = asyncio.run(run())
         assert stats["industry"] >= 1
         row = db.execute(
-            """SELECT i.code, ci.method, ci.confidence, ci.evidence FROM "CompanyIndustry" ci
-               JOIN "Industry" i ON i.id = ci."industryId" WHERE ci."companyId" = %s""",
+            """SELECT ci."industryId", ci.method, ci.confidence, ci.evidence FROM "CompanyIndustry" ci
+               WHERE ci."companyId" = %s""",
             (pending,),
         ).fetchone()
-        assert row is not None and row["code"] == codes[0] and row["method"] == "MODEL"
+        assert row is not None and row["industryId"] == codes[0] and row["method"] == "MODEL"
         assert row["confidence"] <= triage.MAX_CONFIDENCE
         assert "triage-v1" in row["evidence"]
     finally:
         db.execute('DELETE FROM "Organization" WHERE id = %s', (org_id,))
+        db.execute('DELETE FROM "IndustryTaxonomyVersion" WHERE id = %s', (version_id,))
         db.commit()
