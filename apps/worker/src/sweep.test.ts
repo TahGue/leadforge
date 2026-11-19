@@ -5,6 +5,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@leadforge/database";
+import { processPendingCandidates } from "@leadforge/pipeline";
 import { recoverStaleJobs, sweep } from "./index";
 
 const stamp = Date.now();
@@ -85,5 +86,30 @@ describe("orchestration sweep", () => {
     const project = await prisma.discoveryProject.findUniqueOrThrow({ where: { id: projectId } });
     expect(project.status).toBe("COMPLETED");
     expect(project.finishedAt).not.toBeNull();
+  });
+});
+
+describe("concurrent normalization", () => {
+  it("never double-processes a row or duplicates a company when workers overlap", async () => {
+    const project = await prisma.discoveryProject.create({
+      data: { organizationId, name: "Concurrent", status: "RUNNING", geographicMode: "WORLDWIDE", settings: {} },
+    });
+    const domains = Array.from({ length: 6 }, (_, i) => `race-${stamp}-${i}.se`);
+    await prisma.companyCandidate.createMany({
+      data: [...domains, domains[0]!].map((domain, i) => ({
+        organizationId,
+        projectId: project.id,
+        sourceId,
+        sourceRecordId: `race-${i}`,
+        name: domain,
+        website: `https://${domain}/`,
+      })),
+    });
+    // Two workers sweeping the same rows at once, plus a second record for one domain.
+    await Promise.all([processPendingCandidates(50, project.id), processPendingCandidates(50, project.id)]);
+    const rows = await prisma.companyCandidate.findMany({ where: { projectId: project.id } });
+    expect(rows.filter((r) => r.status === "REJECTED").map((r) => r.rejectReason)).toEqual([]);
+    expect(new Set(rows.map((r) => r.companyId)).size).toBe(domains.length);
+    expect(await prisma.crawlJob.count({ where: { projectId: project.id } })).toBe(domains.length);
   });
 });

@@ -280,11 +280,7 @@ async function addIndustries(tx: Tx, companyId: string, matches: IndustryMatch[]
 export async function processCandidate(candidateId: string, contextCache?: Map<string, ProjectContext>): Promise<NormalizationResult> {
   const candidate = await prisma.companyCandidate.findUnique({ where: { id: candidateId } });
   if (!candidate) return { status: "REJECTED", reason: "missing_candidate" };
-  if (candidate.status !== "PENDING") {
-    return candidate.companyId && candidate.status !== "REJECTED"
-      ? { status: candidate.status as "CREATED" | "MERGED", companyId: candidate.companyId, crawlJobId: null, duplicateOf: null }
-      : { status: "REJECTED", reason: candidate.rejectReason ?? "already_processed" };
-  }
+  if (candidate.status !== "PENDING") return settled(candidate);
 
   let ctx = contextCache?.get(candidate.projectId);
   if (!ctx) {
@@ -292,9 +288,10 @@ export async function processCandidate(candidateId: string, contextCache?: Map<s
     contextCache?.set(candidate.projectId, ctx);
   }
 
+  // Only a still-pending row is rejected: another worker may have settled it meanwhile.
   const reject = async (reason: string): Promise<NormalizationResult> => {
-    await prisma.companyCandidate.update({
-      where: { id: candidate.id },
+    await prisma.companyCandidate.updateMany({
+      where: { id: candidate.id, status: "PENDING" },
       data: { status: "REJECTED", rejectReason: reason, processedAt: new Date() },
     });
     return { status: "REJECTED", reason };
@@ -333,7 +330,23 @@ export async function processCandidate(candidateId: string, contextCache?: Map<s
   const registrationNumber = normalizeRegistrationNumber(candidate.registrationNumber);
 
   const result = await prisma.$transaction(
-    async (tx): Promise<NormalizationResult> => {
+    async (tx): Promise<NormalizationResult | Settled> => {
+      // Several workers (replicas, or the sweep and the discovery queue) may pick the
+      // same rows. Serialize on the organization's merge keys so two candidates for one
+      // company never race, then claim this row: if another worker settled it while we
+      // waited, keep its result.
+      const keys = [domain && `d:${domain}`, registrationNumber && `r:${registrationNumber}`]
+        .filter((k): k is string => Boolean(k))
+        .map((k) => `${ctx!.organizationId}|${k}`)
+        .sort();
+      for (const key of keys) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
+      const [row] = await tx.$queryRaw<{ status: string }[]>`
+        SELECT status FROM "CompanyCandidate" WHERE id = ${candidate.id} FOR UPDATE`;
+      if (row?.status !== "PENDING") {
+        const current = await tx.companyCandidate.findUniqueOrThrow({ where: { id: candidate.id } });
+        return { settled: settled(current) };
+      }
+
       if (domain && ctx!.settings.exclusions.excludeSuppressed && (await suppressedDomain(tx, domain))) {
         return { status: "REJECTED", reason: "suppressed_domain" };
       }
@@ -542,8 +555,18 @@ export async function processCandidate(candidateId: string, contextCache?: Map<s
     { timeout: 30_000, maxWait: 30_000 },
   );
 
+  if ("settled" in result) return result.settled;
   if (result.status === "REJECTED") await reject(result.reason);
   return result;
+}
+
+type Settled = { settled: NormalizationResult };
+
+/** The outcome recorded on a candidate that is no longer pending. */
+function settled(candidate: CompanyCandidate): NormalizationResult {
+  return candidate.companyId && candidate.status !== "REJECTED"
+    ? { status: candidate.status as "CREATED" | "MERGED", companyId: candidate.companyId, crawlJobId: null, duplicateOf: null }
+    : { status: "REJECTED", reason: candidate.rejectReason ?? "already_processed" };
 }
 
 type PendingRow = { id: string; projectId: string; website: string | null; name: string; registrationNumber: string | null };
@@ -620,8 +643,8 @@ export async function processPendingCandidates(limit = 200, projectId?: string):
       await processCandidate(row.id, cache);
     } catch (error) {
       console.error("normalization_failed", row.id, (error as Error).message);
-      await prisma.companyCandidate.update({
-        where: { id: row.id },
+      await prisma.companyCandidate.updateMany({
+        where: { id: row.id, status: "PENDING" },
         data: { status: "REJECTED", rejectReason: `error: ${(error as Error).message.slice(0, 200)}`, processedAt: new Date() },
       });
     }

@@ -18,6 +18,7 @@ Discovery-only release. Campaigns, eligibility and SMTP stay frozen until the Ph
 - Logs could include database/Redis passwords from driver errors; crawler logs dropped tracebacks.
 - Bounce-ingest key used a non-constant-time comparison.
 - Normalization could stall: a paused project's backlog (or orphaned staging rows) filled every sweep batch, so newer candidates were never processed. The sweep now selects only rows of running or cancelled projects.
+- Overlapping normalizers (several worker replicas, or the sweep and the discovery queue) could process the same staged record twice; the loser hit a unique-constraint error and overwrote the result with REJECTED. Each record is now claimed with a row lock, and records for the same domain or registration number are serialized with transaction-scoped advisory locks.
 - Staged company records and domain events had no foreign keys, so deleting an organization or project left them behind. Added cascading keys (migration removes existing orphans first).
 - Vulnerable dependencies: zod 4.6.7 (GHSA-mrhx-c7xc-m3w5), deepmerge-ts 8.0.2 (GHSA-ggr8-5vv4-36mx). Dependency audits now run in CI.
 
