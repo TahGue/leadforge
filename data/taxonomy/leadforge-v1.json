@@ -1,0 +1,200 @@
+{
+  "taxonomy": "LEADFORGE",
+  "version": "1.0",
+  "notes": "Internal taxonomy, spec section 5.2. External codes: NACE Rev. 2 (Eurostat). Subsector mappings point at the NACE division, group or class that best covers the subsector; a subsector may map to several codes.",
+  "sectors": [
+    {
+      "code": "it-software", "name": "IT and software",
+      "nace": ["J62", "J63", "J58.2"],
+      "aliases": ["it", "software", "information technology", "saas", "it-tjänster", "mjukvara", "programvara", "it and software"],
+      "children": [
+        { "code": "it-software.development", "name": "Software development", "nace": ["62.01", "58.29"], "aliases": ["software development", "systemutveckling", "app development", "custom software", "programming"] },
+        { "code": "it-software.consulting", "name": "IT consulting", "nace": ["62.02"], "aliases": ["it consulting", "it-konsult", "it consultancy"] },
+        { "code": "it-software.hosting", "name": "Hosting and IT operations", "nace": ["62.03", "63.11"], "aliases": ["hosting", "data centre", "data center", "managed services", "drift"] },
+        { "code": "it-software.cybersecurity", "name": "Cybersecurity", "nace": ["62.02", "62.09"], "aliases": ["cybersecurity", "it security", "informationssäkerhet"] },
+        { "code": "it-software.web", "name": "Web and digital agencies", "nace": ["62.01", "63.12"], "aliases": ["web agency", "webbyrå", "digital agency", "web design"] }
+      ]
+    },
+    {
+      "code": "manufacturing", "name": "Manufacturing",
+      "nace": ["C"],
+      "aliases": ["manufacturing", "manufacturer", "tillverkning", "industri", "industrial", "factory"],
+      "children": [
+        { "code": "manufacturing.machinery", "name": "Machinery and equipment", "nace": ["28"], "aliases": ["machinery", "maskiner", "industrial equipment"] },
+        { "code": "manufacturing.metal", "name": "Metal products", "nace": ["24", "25"], "aliases": ["metal products", "metallindustri", "steel", "stål", "sheet metal"] },
+        { "code": "manufacturing.electronics", "name": "Electronics and electrical equipment", "nace": ["26", "27"], "aliases": ["electronics", "elektronik", "electrical equipment"] },
+        { "code": "manufacturing.chemicals", "name": "Chemicals and plastics", "nace": ["20", "22"], "aliases": ["chemicals", "kemi", "plastics", "plast"] },
+        { "code": "manufacturing.pharma", "name": "Pharmaceuticals", "nace": ["21"], "aliases": ["pharmaceuticals", "pharma", "läkemedel"] },
+        { "code": "manufacturing.wood-paper", "name": "Wood, paper and furniture", "nace": ["16", "17", "31"], "aliases": ["wood products", "trävaror", "paper", "pulp", "furniture", "möbler"] },
+        { "code": "manufacturing.textiles", "name": "Textiles and apparel", "nace": ["13", "14", "15"], "aliases": ["textiles", "textil", "apparel", "clothing manufacturing"] }
+      ]
+    },
+    {
+      "code": "construction", "name": "Construction",
+      "nace": ["F"],
+      "aliases": ["construction", "bygg", "byggföretag", "building", "contractor", "entreprenad"],
+      "children": [
+        { "code": "construction.buildings", "name": "Building construction", "nace": ["41"], "aliases": ["building construction", "husbyggnad", "general contractor", "byggentreprenör"] },
+        { "code": "construction.civil", "name": "Civil engineering", "nace": ["42"], "aliases": ["civil engineering", "anläggning", "infrastructure", "roads", "väg"] },
+        { "code": "construction.electrical", "name": "Electrical installation", "nace": ["43.21"], "aliases": ["electrician", "elinstallation", "elektriker", "electrical contractor"] },
+        { "code": "construction.plumbing-hvac", "name": "Plumbing and HVAC", "nace": ["43.22"], "aliases": ["plumbing", "rörmokare", "vvs", "hvac", "ventilation"] },
+        { "code": "construction.finishing", "name": "Specialised construction and finishing", "nace": ["43.3", "43.9"], "aliases": ["painting", "måleri", "roofing", "tak", "carpentry", "snickeri", "flooring"] }
+      ]
+    },
+    {
+      "code": "healthcare", "name": "Healthcare",
+      "nace": ["Q86", "Q87", "Q88"],
+      "aliases": ["healthcare", "health care", "vård", "sjukvård", "medical"],
+      "children": [
+        { "code": "healthcare.hospitals", "name": "Hospitals and clinics", "nace": ["86.1"], "aliases": ["hospital", "sjukhus", "clinic", "klinik"] },
+        { "code": "healthcare.medical-practice", "name": "Medical practice", "nace": ["86.21", "86.22"], "aliases": ["medical practice", "vårdcentral", "doctor", "läkare"] },
+        { "code": "healthcare.dental", "name": "Dental practice", "nace": ["86.23"], "aliases": ["dentist", "tandläkare", "dental clinic", "tandvård"] },
+        { "code": "healthcare.care", "name": "Residential and social care", "nace": ["87", "88"], "aliases": ["elderly care", "äldreomsorg", "home care", "hemtjänst", "social care"] },
+        { "code": "healthcare.other", "name": "Other health services", "nace": ["86.9"], "aliases": ["physiotherapy", "fysioterapi", "psychology", "laboratory"] }
+      ]
+    },
+    {
+      "code": "education", "name": "Education",
+      "nace": ["P85"],
+      "aliases": ["education", "utbildning", "school", "skola"],
+      "children": [
+        { "code": "education.schools", "name": "Primary and secondary schools", "nace": ["85.1", "85.2", "85.3"], "aliases": ["school", "grundskola", "gymnasium", "preschool", "förskola"] },
+        { "code": "education.higher", "name": "Higher education", "nace": ["85.4"], "aliases": ["university", "universitet", "högskola", "college"] },
+        { "code": "education.training", "name": "Training and courses", "nace": ["85.5"], "aliases": ["training", "kurser", "corporate training", "driving school", "trafikskola"] },
+        { "code": "education.support", "name": "Education support", "nace": ["85.6"], "aliases": ["education consulting", "edtech"] }
+      ]
+    },
+    {
+      "code": "retail-ecommerce", "name": "Retail and e-commerce",
+      "nace": ["G47"],
+      "aliases": ["retail", "detaljhandel", "shop", "butik", "store", "e-commerce", "ecommerce", "e-handel"],
+      "children": [
+        { "code": "retail-ecommerce.stores", "name": "Retail stores", "nace": ["47.1", "47.5", "47.7"], "aliases": ["retail store", "butik", "shop"] },
+        { "code": "retail-ecommerce.grocery", "name": "Grocery retail", "nace": ["47.11", "47.2"], "aliases": ["grocery", "livsmedelsbutik", "supermarket"] },
+        { "code": "retail-ecommerce.online", "name": "Online retail", "nace": ["47.91"], "aliases": ["online shop", "webshop", "e-handel", "e-commerce", "nätbutik"] }
+      ]
+    },
+    {
+      "code": "logistics-transport", "name": "Logistics and transportation",
+      "nace": ["H"],
+      "aliases": ["logistics", "logistik", "transport", "transportation", "shipping", "frakt"],
+      "children": [
+        { "code": "logistics-transport.road-freight", "name": "Road freight", "nace": ["49.41"], "aliases": ["road freight", "åkeri", "trucking", "haulage", "lastbil"] },
+        { "code": "logistics-transport.warehousing", "name": "Warehousing and storage", "nace": ["52.1"], "aliases": ["warehousing", "lager", "storage", "3pl"] },
+        { "code": "logistics-transport.forwarding", "name": "Freight forwarding", "nace": ["52.29"], "aliases": ["freight forwarding", "speditör", "spedition", "forwarder"] },
+        { "code": "logistics-transport.courier", "name": "Postal and courier", "nace": ["53"], "aliases": ["courier", "bud", "parcel delivery", "budfirma"] },
+        { "code": "logistics-transport.sea-air-rail", "name": "Sea, air and rail transport", "nace": ["49.1", "49.2", "50", "51"], "aliases": ["shipping line", "rederi", "air cargo", "rail freight", "järnväg"] },
+        { "code": "logistics-transport.passenger", "name": "Passenger transport", "nace": ["49.3"], "aliases": ["taxi", "bus", "buss", "passenger transport"] }
+      ]
+    },
+    {
+      "code": "finance-insurance", "name": "Finance and insurance",
+      "nace": ["K"],
+      "aliases": ["finance", "finans", "financial services", "insurance", "försäkring", "bank"],
+      "children": [
+        { "code": "finance-insurance.banking", "name": "Banking", "nace": ["64.1"], "aliases": ["bank", "banking"] },
+        { "code": "finance-insurance.investment", "name": "Investment and asset management", "nace": ["64.3", "66.3"], "aliases": ["asset management", "kapitalförvaltning", "venture capital", "private equity"] },
+        { "code": "finance-insurance.insurance", "name": "Insurance", "nace": ["65", "66.2"], "aliases": ["insurance", "försäkring", "insurance broker", "försäkringsmäklare"] },
+        { "code": "finance-insurance.services", "name": "Financial services and fintech", "nace": ["64.9", "66.1"], "aliases": ["fintech", "payments", "betalningar", "lending", "credit"] }
+      ]
+    },
+    {
+      "code": "real-estate", "name": "Real estate",
+      "nace": ["L68"],
+      "aliases": ["real estate", "fastigheter", "property", "fastighet"],
+      "children": [
+        { "code": "real-estate.agency", "name": "Real estate agency", "nace": ["68.31"], "aliases": ["estate agent", "mäklare", "fastighetsmäklare", "realtor"] },
+        { "code": "real-estate.management", "name": "Property management", "nace": ["68.32"], "aliases": ["property management", "fastighetsförvaltning"] },
+        { "code": "real-estate.rental", "name": "Property rental and operation", "nace": ["68.2"], "aliases": ["property rental", "uthyrning", "landlord", "fastighetsbolag"] },
+        { "code": "real-estate.development", "name": "Real estate development", "nace": ["41.1", "68.1"], "aliases": ["property development", "fastighetsutveckling", "developer"] }
+      ]
+    },
+    {
+      "code": "hospitality-tourism", "name": "Hospitality and tourism",
+      "nace": ["I", "N79"],
+      "aliases": ["hospitality", "tourism", "turism", "besöksnäring", "hotel", "restaurant"],
+      "children": [
+        { "code": "hospitality-tourism.hotels", "name": "Hotels and accommodation", "nace": ["55"], "aliases": ["hotel", "hotell", "hostel", "accommodation", "boende"] },
+        { "code": "hospitality-tourism.restaurants", "name": "Restaurants and cafés", "nace": ["56.1", "56.3"], "aliases": ["restaurant", "restaurang", "café", "cafe", "bar"] },
+        { "code": "hospitality-tourism.catering", "name": "Catering and events", "nace": ["56.2"], "aliases": ["catering", "event catering"] },
+        { "code": "hospitality-tourism.travel", "name": "Travel agencies and tour operators", "nace": ["79"], "aliases": ["travel agency", "resebyrå", "tour operator"] }
+      ]
+    },
+    {
+      "code": "energy-utilities", "name": "Energy and utilities",
+      "nace": ["D", "E"],
+      "aliases": ["energy", "energi", "utilities", "power", "el"],
+      "children": [
+        { "code": "energy-utilities.electricity", "name": "Electricity generation and supply", "nace": ["35.1"], "aliases": ["electricity", "elbolag", "power generation"] },
+        { "code": "energy-utilities.renewables", "name": "Renewable energy", "nace": ["35.11"], "aliases": ["renewable energy", "förnybar energi", "solar", "solenergi", "wind power", "vindkraft"] },
+        { "code": "energy-utilities.heating-gas", "name": "Gas, heating and cooling", "nace": ["35.2", "35.3"], "aliases": ["district heating", "fjärrvärme", "gas"] },
+        { "code": "energy-utilities.water-waste", "name": "Water, waste and recycling", "nace": ["36", "37", "38", "39"], "aliases": ["waste management", "avfall", "recycling", "återvinning", "water utility"] }
+      ]
+    },
+    {
+      "code": "professional-services", "name": "Professional services",
+      "nace": ["M", "N78"],
+      "aliases": ["professional services", "consulting", "konsult", "consultancy", "b2b services"],
+      "children": [
+        { "code": "professional-services.legal", "name": "Legal services", "nace": ["69.1"], "aliases": ["law firm", "advokatbyrå", "lawyer", "advokat", "legal"] },
+        { "code": "professional-services.accounting", "name": "Accounting and auditing", "nace": ["69.2"], "aliases": ["accounting", "redovisning", "bokföring", "auditor", "revisor", "revision"] },
+        { "code": "professional-services.management-consulting", "name": "Management consulting", "nace": ["70.2"], "aliases": ["management consulting", "managementkonsult", "business consulting", "strategy consulting"] },
+        { "code": "professional-services.engineering", "name": "Architecture and engineering", "nace": ["71.1"], "aliases": ["architect", "arkitekt", "engineering consultancy", "teknikkonsult", "ingenjörsbyrå"] },
+        { "code": "professional-services.marketing", "name": "Advertising and marketing", "nace": ["73"], "aliases": ["advertising agency", "reklambyrå", "marketing agency", "marknadsföring"] },
+        { "code": "professional-services.recruitment", "name": "Recruitment and staffing", "nace": ["78"], "aliases": ["recruitment", "rekrytering", "staffing", "bemanning"] },
+        { "code": "professional-services.research", "name": "Research and development", "nace": ["72"], "aliases": ["research", "forskning", "r&d", "laboratory services"] }
+      ]
+    },
+    {
+      "code": "agriculture-food", "name": "Agriculture and food",
+      "nace": ["A", "C10", "C11"],
+      "aliases": ["agriculture", "jordbruk", "lantbruk", "food", "livsmedel", "farming"],
+      "children": [
+        { "code": "agriculture-food.farming", "name": "Crop and animal production", "nace": ["01"], "aliases": ["farm", "gård", "lantbruk", "livestock", "crop"] },
+        { "code": "agriculture-food.forestry", "name": "Forestry", "nace": ["02"], "aliases": ["forestry", "skogsbruk", "skog"] },
+        { "code": "agriculture-food.fishing", "name": "Fishing and aquaculture", "nace": ["03"], "aliases": ["fishing", "fiske", "aquaculture", "vattenbruk"] },
+        { "code": "agriculture-food.food-processing", "name": "Food processing", "nace": ["10"], "aliases": ["food processing", "livsmedelsindustri", "bakery", "bageri", "dairy", "mejeri"] },
+        { "code": "agriculture-food.beverages", "name": "Beverages", "nace": ["11"], "aliases": ["brewery", "bryggeri", "beverages", "drycker", "distillery"] }
+      ]
+    },
+    {
+      "code": "automotive", "name": "Automotive",
+      "nace": ["C29", "G45"],
+      "aliases": ["automotive", "fordon", "car", "bil", "motor vehicles"],
+      "children": [
+        { "code": "automotive.manufacturing", "name": "Vehicle and parts manufacturing", "nace": ["29"], "aliases": ["vehicle manufacturing", "fordonsindustri", "auto parts"] },
+        { "code": "automotive.dealers", "name": "Vehicle sales", "nace": ["45.1"], "aliases": ["car dealer", "bilhandlare", "bilhandel", "dealership"] },
+        { "code": "automotive.repair", "name": "Vehicle repair and maintenance", "nace": ["45.2"], "aliases": ["car repair", "bilverkstad", "verkstad", "garage", "mechanic"] },
+        { "code": "automotive.parts-trade", "name": "Parts and accessories trade", "nace": ["45.3"], "aliases": ["car parts", "bildelar", "reservdelar"] }
+      ]
+    },
+    {
+      "code": "media-communications", "name": "Media and communications",
+      "nace": ["J58.1", "J59", "J60", "J61", "M70.21"],
+      "aliases": ["media", "communications", "kommunikation", "telecom", "telekom"],
+      "children": [
+        { "code": "media-communications.publishing", "name": "Publishing", "nace": ["58.1"], "aliases": ["publisher", "förlag", "newspaper", "tidning", "magazine"] },
+        { "code": "media-communications.film-broadcast", "name": "Film, video and broadcasting", "nace": ["59", "60"], "aliases": ["film production", "filmproduktion", "video production", "tv", "radio"] },
+        { "code": "media-communications.telecom", "name": "Telecommunications", "nace": ["61"], "aliases": ["telecommunications", "telekommunikation", "isp", "operator", "operatör"] },
+        { "code": "media-communications.pr", "name": "Public relations", "nace": ["70.21"], "aliases": ["public relations", "pr agency", "pr-byrå", "kommunikationsbyrå"] }
+      ]
+    },
+    {
+      "code": "wholesale-distribution", "name": "Wholesale and distribution",
+      "nace": ["G46"],
+      "aliases": ["wholesale", "partihandel", "grossist", "distribution", "distributor"],
+      "children": [
+        { "code": "wholesale-distribution.food", "name": "Food and beverage wholesale", "nace": ["46.3"], "aliases": ["food wholesale", "livsmedelsgrossist"] },
+        { "code": "wholesale-distribution.industrial", "name": "Machinery and industrial wholesale", "nace": ["46.6", "46.7"], "aliases": ["industrial supplies", "industrigrossist", "machinery wholesale", "building materials wholesale"] },
+        { "code": "wholesale-distribution.consumer", "name": "Consumer goods wholesale", "nace": ["46.4"], "aliases": ["consumer goods wholesale", "importer", "importör"] },
+        { "code": "wholesale-distribution.ict", "name": "ICT equipment wholesale", "nace": ["46.5"], "aliases": ["it distributor", "it-grossist", "electronics distributor"] }
+      ]
+    },
+    {
+      "code": "other", "name": "Other / unclassified",
+      "nace": [],
+      "aliases": ["other", "övrigt", "unclassified", "unknown"],
+      "children": []
+    }
+  ]
+}

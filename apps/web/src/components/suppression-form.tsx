@@ -18,7 +18,8 @@ export function SuppressionForm() {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        email: String(form.get("email") ?? ""),
+        email: String(form.get("email") ?? "") || undefined,
+        domain: String(form.get("domain") ?? "") || undefined,
         reason: String(form.get("reason") ?? "MANUAL"),
         source: String(form.get("source") ?? "") || undefined,
       }),
@@ -42,7 +43,13 @@ export function SuppressionForm() {
         <label className="mb-1 block text-xs font-medium" htmlFor="email">
           Email
         </label>
-        <input id="email" name="email" type="email" required placeholder="person@example.com" className="input" />
+        <input id="email" name="email" type="email" placeholder="person@example.com" className="input" />
+      </div>
+      <div className="min-w-48 flex-1">
+        <label className="mb-1 block text-xs font-medium" htmlFor="domain">
+          …or a whole domain
+        </label>
+        <input id="domain" name="domain" placeholder="company.se (stops discovery and crawling)" className="input" />
       </div>
       <div>
         <label className="mb-1 block text-xs font-medium" htmlFor="reason">

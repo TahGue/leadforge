@@ -1,12 +1,12 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@leadforge/database";
 import { ApiError } from "@leadforge/shared";
-import { json, withAuth } from "@/lib/api";
+import { json, withCampaignAuth } from "@/lib/api";
 import { recipientCounts } from "@/lib/campaign";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withAuth<{ id: string }>(async (_request, session, params) => {
+export const GET = withCampaignAuth<{ id: string }>(async (_request, session, params) => {
   const campaign = await prisma.campaign.findFirst({
     where: { id: params.id, organizationId: session.organization.id },
   });

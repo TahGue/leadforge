@@ -3,7 +3,7 @@
  * Applies SQL migrations without the Prisma schema engine.
  *
  * Used where the engine process cannot be spawned (restricted sandboxes) and
- * by the local PGlite harness. Records each migration in _prisma_migrations
+ * in CI jobs without Node. Records each migration in _prisma_migrations
  * using the same checksum Prisma computes, so a later `prisma migrate deploy`
  * sees the database as up to date instead of re-running everything.
  *

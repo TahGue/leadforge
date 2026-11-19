@@ -1,0 +1,115 @@
+country	region_iso	slug	name	ascii_name	latitude	longitude	population	aliases
+SE	SE-AB	stockholm	Stockholm	Stockholm	59.3293	18.0686	1000000
+SE	SE-O	goteborg	Göteborg	Goteborg	57.7089	11.9746	600000	Gothenburg|Gotenburg
+SE	SE-M	malmo	Malmö	Malmo	55.6050	13.0038	350000
+SE	SE-C	uppsala	Uppsala	Uppsala	59.8586	17.6389	180000
+SE	SE-U	vasteras	Västerås	Vasteras	59.6099	16.5448	130000
+SE	SE-T	orebro	Örebro	Orebro	59.2753	15.2134	125000
+SE	SE-E	linkoping	Linköping	Linkoping	58.4108	15.6214	115000
+SE	SE-M	helsingborg	Helsingborg	Helsingborg	56.0465	12.6945	115000
+SE	SE-F	jonkoping	Jönköping	Jonkoping	57.7826	14.1618	100000
+SE	SE-E	norrkoping	Norrköping	Norrkoping	58.5877	16.1924	100000
+SE	SE-M	lund	Lund	Lund	55.7047	13.1910	95000
+SE	SE-AC	umea	Umeå	Umea	63.8258	20.2630	90000
+SE	SE-X	gavle	Gävle	Gavle	60.6749	17.1413	80000
+SE	SE-O	boras	Borås	Boras	57.7210	12.9401	75000
+SE	SE-AB	sodertalje	Södertälje	Sodertalje	59.1955	17.6253	70000
+SE	SE-D	eskilstuna	Eskilstuna	Eskilstuna	59.3666	16.5077	70000
+SE	SE-N	halmstad	Halmstad	Halmstad	56.6745	12.8578	70000
+SE	SE-G	vaxjo	Växjö	Vaxjo	56.8777	14.8091	65000
+SE	SE-S	karlstad	Karlstad	Karlstad	59.3793	13.5036	65000
+SE	SE-Y	sundsvall	Sundsvall	Sundsvall	62.3908	17.3069	58000
+SE	SE-O	molndal	Mölndal	Molndal	57.6554	12.0138	45000
+SE	SE-O	trollhattan	Trollhättan	Trollhattan	58.2837	12.2886	50000
+SE	SE-Z	ostersund	Östersund	Ostersund	63.1792	14.6357	50000
+SE	SE-BD	lulea	Luleå	Lulea	65.5848	22.1547	48000
+SE	SE-H	kalmar	Kalmar	Kalmar	56.6634	16.3568	41000
+SE	SE-W	falun	Falun	Falun	60.6065	15.6355	38000
+SE	SE-K	karlskrona	Karlskrona	Karlskrona	56.1612	15.5869	37000
+SE	SE-N	kungsbacka	Kungsbacka	Kungsbacka	57.4875	12.0761	25000
+SE	SE-I	visby	Visby	Visby	57.6348	18.2948	25000
+NO	NO-03	oslo	Oslo	Oslo	59.9139	10.7522	700000
+NO	NO-46	bergen	Bergen	Bergen	60.3913	5.3221	290000
+NO	NO-50	trondheim	Trondheim	Trondheim	63.4305	10.3951	210000
+NO	NO-11	stavanger	Stavanger	Stavanger	58.9700	5.7331	145000
+NO	NO-42	kristiansand	Kristiansand	Kristiansand	58.1462	7.9956	115000
+NO	NO-31	fredrikstad	Fredrikstad	Fredrikstad	59.2181	10.9298	85000
+NO	NO-11	sandnes	Sandnes	Sandnes	58.8517	5.7350	82000
+NO	NO-55	tromso	Tromsø	Tromso	69.6492	18.9553	78000
+NO	NO-33	drammen	Drammen	Drammen	59.7439	10.2045	70000
+NO	NO-15	alesund	Ålesund	Alesund	62.4722	6.1495	67000
+NO	NO-39	tonsberg	Tønsberg	Tonsberg	59.2675	10.4076	57000
+NO	NO-40	skien	Skien	Skien	59.2096	9.6090	55000
+NO	NO-18	bodo	Bodø	Bodo	67.2804	14.4049	53000
+NO	NO-32	lillestrom	Lillestrøm	Lillestrom	59.9560	11.0492	50000
+NO	NO-34	hamar	Hamar	Hamar	60.7945	11.0680	32000
+NO	NO-56	alta	Alta	Alta	69.9689	23.2716	21000
+DK	DK-84	kobenhavn	København	Kobenhavn	55.6761	12.5683	650000	Copenhagen
+DK	DK-82	aarhus	Aarhus	Aarhus	56.1629	10.2039	290000	Arhus
+DK	DK-83	odense	Odense	Odense	55.4038	10.4024	185000
+DK	DK-81	aalborg	Aalborg	Aalborg	57.0488	9.9217	120000	Alborg
+DK	DK-83	esbjerg	Esbjerg	Esbjerg	55.4765	8.4594	72000
+DK	DK-82	randers	Randers	Randers	56.4607	10.0364	63000
+DK	DK-83	kolding	Kolding	Kolding	55.4904	9.4722	62000
+DK	DK-82	horsens	Horsens	Horsens	55.8607	9.8503	61000
+DK	DK-83	vejle	Vejle	Vejle	55.7093	9.5357	60000
+DK	DK-85	roskilde	Roskilde	Roskilde	55.6415	12.0803	52000
+FI	FI-18	helsinki	Helsinki	Helsinki	60.1699	24.9384	670000	Helsingfors
+FI	FI-18	espoo	Espoo	Espoo	60.2055	24.6559	310000	Esbo
+FI	FI-11	tampere	Tampere	Tampere	61.4978	23.7610	250000	Tammerfors
+FI	FI-18	vantaa	Vantaa	Vantaa	60.2934	25.0378	245000	Vanda
+FI	FI-14	oulu	Oulu	Oulu	65.0121	25.4651	215000	Uleaborg
+FI	FI-19	turku	Turku	Turku	60.4518	22.2666	200000	Abo
+FI	FI-08	jyvaskyla	Jyväskylä	Jyvaskyla	62.2426	25.7473	147000
+FI	FI-15	kuopio	Kuopio	Kuopio	62.8924	27.6770	125000
+FI	FI-16	lahti	Lahti	Lahti	60.9827	25.6612	120000
+FI	FI-17	pori	Pori	Pori	61.4851	21.7974	84000
+FI	FI-13	joensuu	Joensuu	Joensuu	62.6010	29.7636	78000
+FI	FI-02	lappeenranta	Lappeenranta	Lappeenranta	61.0587	28.1887	73000
+FI	FI-12	vaasa	Vaasa	Vaasa	63.0951	21.6165	68000	Vasa
+FI	FI-06	hameenlinna	Hämeenlinna	Hameenlinna	60.9959	24.4643	68000
+FI	FI-10	rovaniemi	Rovaniemi	Rovaniemi	66.5039	25.7294	65000
+FI	FI-03	seinajoki	Seinäjoki	Seinajoki	62.7903	22.8403	65000
+FI	FI-04	mikkeli	Mikkeli	Mikkeli	61.6886	27.2723	52000
+FI	FI-09	kotka	Kotka	Kotka	60.4664	26.9458	51000
+FI	FI-07	kokkola	Kokkola	Kokkola	63.8385	23.1307	48000	Karleby
+FI	FI-05	kajaani	Kajaani	Kajaani	64.2273	27.7285	36000
+FI	FI-01	mariehamn	Mariehamn	Mariehamn	60.0973	19.9348	12000	Maarianhamina
+DE	DE-BE	berlin	Berlin	Berlin	52.5200	13.4050	3700000
+DE	DE-HH	hamburg	Hamburg	Hamburg	53.5511	9.9937	1900000
+DE	DE-BY	munchen	München	Munchen	48.1351	11.5820	1500000	Munich|Muenchen
+DE	DE-NW	koln	Köln	Koln	50.9375	6.9603	1080000	Cologne|Koeln
+DE	DE-HE	frankfurt-am-main	Frankfurt am Main	Frankfurt am Main	50.1109	8.6821	770000	Frankfurt
+DE	DE-BW	stuttgart	Stuttgart	Stuttgart	48.7758	9.1829	630000
+DE	DE-NW	dusseldorf	Düsseldorf	Dusseldorf	51.2277	6.7735	620000	Duesseldorf
+DE	DE-SN	leipzig	Leipzig	Leipzig	51.3397	12.3731	600000
+DE	DE-NW	dortmund	Dortmund	Dortmund	51.5136	7.4653	590000
+DE	DE-NW	essen	Essen	Essen	51.4556	7.0116	580000
+DE	DE-HB	bremen	Bremen	Bremen	53.0793	8.8017	570000
+DE	DE-SN	dresden	Dresden	Dresden	51.0504	13.7373	560000
+DE	DE-NI	hannover	Hannover	Hannover	52.3759	9.7320	540000	Hanover
+DE	DE-BY	nurnberg	Nürnberg	Nurnberg	49.4521	11.0767	520000	Nuremberg|Nuernberg
+DE	DE-NW	duisburg	Duisburg	Duisburg	51.4344	6.7623	500000
+DE	DE-BW	mannheim	Mannheim	Mannheim	49.4875	8.4660	310000
+DE	DE-SH	kiel	Kiel	Kiel	54.3233	10.1228	245000
+DE	DE-ST	magdeburg	Magdeburg	Magdeburg	52.1205	11.6276	240000
+DE	DE-MV	rostock	Rostock	Rostock	54.0924	12.0991	210000
+DE	DE-RP	mainz	Mainz	Mainz	49.9929	8.2473	220000
+DE	DE-TH	erfurt	Erfurt	Erfurt	50.9848	11.0299	215000
+DE	DE-BB	potsdam	Potsdam	Potsdam	52.3906	13.0645	185000
+DE	DE-SL	saarbrucken	Saarbrücken	Saarbrucken	49.2402	6.9969	180000	Saarbruecken
+GB	GB-ENG	london	London	London	51.5072	-0.1276	8900000
+GB	GB-ENG	birmingham	Birmingham	Birmingham	52.4862	-1.8904	1150000
+GB	GB-ENG	leeds	Leeds	Leeds	53.8008	-1.5491	800000
+GB	GB-SCT	glasgow	Glasgow	Glasgow	55.8642	-4.2518	630000
+GB	GB-ENG	sheffield	Sheffield	Sheffield	53.3811	-1.4701	560000
+GB	GB-ENG	manchester	Manchester	Manchester	53.4808	-2.2426	550000
+GB	GB-SCT	edinburgh	Edinburgh	Edinburgh	55.9533	-3.1883	525000
+GB	GB-ENG	liverpool	Liverpool	Liverpool	53.4084	-2.9916	490000
+GB	GB-ENG	bristol	Bristol	Bristol	51.4545	-2.5879	470000
+GB	GB-WLS	cardiff	Cardiff	Cardiff	51.4816	-3.1791	360000
+GB	GB-NIR	belfast	Belfast	Belfast	54.5973	-5.9301	345000
+GB	GB-ENG	nottingham	Nottingham	Nottingham	52.9548	-1.1581	330000
+GB	GB-ENG	newcastle-upon-tyne	Newcastle upon Tyne	Newcastle upon Tyne	54.9783	-1.6178	300000	Newcastle
+GB	GB-WLS	swansea	Swansea	Swansea	51.6214	-3.9436	245000
+GB	GB-SCT	aberdeen	Aberdeen	Aberdeen	57.1497	-2.0943	200000

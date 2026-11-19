@@ -1,0 +1,20 @@
+{
+  "url": "https://exampleconsulting.co.uk/",
+  "region": "GB",
+  "archetype": "homepage-jsonld",
+  "labeler": "synthetic",
+  "emails": [
+    {
+      "value": "support@exampleconsulting.co.uk",
+      "category": "SUPPORT"
+    },
+    {
+      "value": "jobs@exampleconsulting.co.uk",
+      "category": "CAREERS"
+    }
+  ],
+  "phones": [
+    "+442079460000"
+  ],
+  "traps": []
+}

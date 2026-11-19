@@ -11,6 +11,7 @@ COPY apps/worker/package.json apps/worker/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/compliance/package.json packages/compliance/package.json
+COPY packages/pipeline/package.json packages/pipeline/package.json
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 FROM deps AS build

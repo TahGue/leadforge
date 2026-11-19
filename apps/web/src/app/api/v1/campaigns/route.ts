@@ -1,12 +1,12 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@leadforge/database";
 import { campaignCreate, parseBody } from "@leadforge/shared";
-import { json, withAuth } from "@/lib/api";
+import { json, withCampaignAuth } from "@/lib/api";
 import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withAuth(async (_request: NextRequest, session) => {
+export const GET = withCampaignAuth(async (_request: NextRequest, session) => {
   const campaigns = await prisma.campaign.findMany({
     where: { organizationId: session.organization.id },
     orderBy: { createdAt: "desc" },
@@ -15,7 +15,7 @@ export const GET = withAuth(async (_request: NextRequest, session) => {
   return json({ data: campaigns });
 }, "VIEWER");
 
-export const POST = withAuth(async (request: NextRequest, session) => {
+export const POST = withCampaignAuth(async (request: NextRequest, session) => {
   const input = await parseBody(request, campaignCreate);
   const campaign = await prisma.campaign.create({
     data: {

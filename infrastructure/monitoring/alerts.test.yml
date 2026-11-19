@@ -1,0 +1,90 @@
+# promtool unit tests: each alert fires on an induced failure and stays quiet when healthy.
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: web down fires after 5 minutes, not before
+    interval: 1m
+    input_series:
+      - series: 'up{job="leadforge-web",instance="web:3000"}'
+        values: "1 1 0 0 0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: LeadForgeWebDown
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: LeadForgeWebDown
+        exp_alerts:
+          - exp_labels: { severity: critical, job: leadforge-web, instance: "web:3000" }
+            exp_annotations:
+              summary: LeadForge web is not answering metrics scrapes
+              runbook: docs/runbooks.md
+
+  - name: crawler stalled with a backlog
+    interval: 5m
+    input_series:
+      - series: 'leadforge_crawl_jobs{status="QUEUED"}'
+        values: "40x30"
+      - series: "leadforge_crawl_pages_fetched_total"
+        values: "1000x30"
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: LeadForgeCrawlerStalled
+        exp_alerts:
+          - exp_labels: { severity: warning, status: QUEUED }
+            exp_annotations:
+              summary: "40 crawl jobs queued but nothing fetched for an hour"
+              runbook: docs/runbooks.md
+
+  - name: crawler making progress does not alert
+    interval: 5m
+    input_series:
+      - series: 'leadforge_crawl_jobs{status="QUEUED"}'
+        values: "40x30"
+      - series: "leadforge_crawl_pages_fetched_total"
+        values: "1000+12x30"
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: LeadForgeCrawlerStalled
+        exp_alerts: []
+
+  - name: failure and policy-stop spikes
+    interval: 5m
+    input_series:
+      - series: 'leadforge_crawl_jobs{status="FAILED"}'
+        values: "0+3x24"
+      - series: 'leadforge_crawl_jobs{status="BLOCKED"}'
+        values: "0+1x24"
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: LeadForgeCrawlFailuresHigh
+        exp_alerts:
+          - exp_labels: { severity: warning, status: FAILED }
+            exp_annotations:
+              summary: "More than 20 crawl jobs failed in the last hour"
+              runbook: docs/runbooks.md
+      - eval_time: 90m
+        alertname: LeadForgePolicyStopsSpike
+        exp_alerts:
+          - exp_labels: { severity: warning, status: BLOCKED }
+            exp_annotations:
+              summary: "More than 10 crawls stopped by site policy in the last hour"
+              runbook: docs/runbooks.md
+
+  - name: contacts without evidence
+    interval: 1m
+    input_series:
+      - series: "leadforge_contacts"
+        values: "100x120"
+      - series: "leadforge_contacts_with_evidence"
+        values: "97x120"
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: LeadForgeContactsWithoutEvidence
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "3 contacts have no source evidence"
+              runbook: docs/runbooks.md

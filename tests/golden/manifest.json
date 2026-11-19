@@ -1,0 +1,29 @@
+{
+  "pages": [
+    {
+      "id": "synthetic-se-contact",
+      "archetype": "contact-page",
+      "labeler": "synthetic",
+      "synthetic": true
+    },
+    {
+      "id": "synthetic-de-impressum",
+      "archetype": "imprint",
+      "labeler": "synthetic",
+      "synthetic": true
+    },
+    {
+      "id": "synthetic-gb-jsonld",
+      "archetype": "homepage-jsonld",
+      "labeler": "synthetic",
+      "synthetic": true
+    },
+    {
+      "id": "synthetic-js-shell",
+      "archetype": "client-rendered",
+      "labeler": "synthetic",
+      "synthetic": true
+    }
+  ],
+  "note": "Synthetic seed pages. Add real, hand-labelled pages from the Phase 0 spike."
+}

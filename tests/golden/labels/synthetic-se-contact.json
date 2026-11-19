@@ -1,0 +1,37 @@
+{
+  "url": "https://exempelbygg.se/kontakt",
+  "region": "SE",
+  "archetype": "contact-page",
+  "labeler": "synthetic",
+  "emails": [
+    {
+      "value": "offert@exempelbygg.se",
+      "category": "SALES"
+    },
+    {
+      "value": "ekonomi@exempelbygg.se"
+    }
+  ],
+  "phones": [
+    "+46317000000"
+  ],
+  "forms": 1,
+  "traps": [
+    {
+      "value": "logo@2x.png",
+      "reason": "asset-filename"
+    },
+    {
+      "value": "hidden@exempelbygg.se",
+      "reason": "hidden-node"
+    },
+    {
+      "value": "js@tracker.example",
+      "reason": "script"
+    },
+    {
+      "value": "error-reporting@sentry.io",
+      "reason": "vendor"
+    }
+  ]
+}

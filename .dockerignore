@@ -8,6 +8,8 @@ node_modules
 .github
 docs
 data
+!data/geography/seed
+!data/taxonomy
 backups
 .pgdata
 .pnpm-store

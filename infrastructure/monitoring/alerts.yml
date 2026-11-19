@@ -1,0 +1,53 @@
+# Alert rules for the monitoring profile (spec 22, gate G10).
+# Unit-tested with induced failures in alerts.test.yml:
+#   docker run --rm -v "$PWD/infrastructure/monitoring:/m" --entrypoint promtool prom/prometheus:v3.5.0 test rules /m/alerts.test.yml
+# Alerts show in Prometheus (/alerts) and Grafana; route them to people with an
+# Alertmanager or a Grafana contact point (see docs/deployment.md, Monitoring).
+groups:
+  - name: leadforge
+    rules:
+      - alert: LeadForgeWebDown
+        expr: up{job="leadforge-web"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: LeadForge web is not answering metrics scrapes
+          runbook: docs/runbooks.md
+
+      - alert: LeadForgeCrawlerStalled
+        # Work is queued but no page has been fetched for an hour: the crawler is down or wedged.
+        expr: (leadforge_crawl_jobs{status="QUEUED"} > 0) and on() (delta(leadforge_crawl_pages_fetched_total[1h]) <= 0)
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} crawl jobs queued but nothing fetched for an hour"
+          runbook: docs/runbooks.md
+
+      - alert: LeadForgeCrawlFailuresHigh
+        expr: delta(leadforge_crawl_jobs{status="FAILED"}[1h]) > 20
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 20 crawl jobs failed in the last hour"
+          runbook: docs/runbooks.md
+
+      - alert: LeadForgePolicyStopsSpike
+        # 401/403/429/CAPTCHA stops are never retried; a spike means a user agent, rate or source problem.
+        expr: delta(leadforge_crawl_jobs{status="BLOCKED"}[1h]) > 10
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 10 crawls stopped by site policy in the last hour"
+          runbook: docs/runbooks.md
+
+      - alert: LeadForgeContactsWithoutEvidence
+        # Every contact must carry source evidence (spec 1, 26).
+        expr: (leadforge_contacts - leadforge_contacts_with_evidence) > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} contacts have no source evidence"
+          runbook: docs/runbooks.md

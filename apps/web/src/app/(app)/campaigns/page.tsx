@@ -1,3 +1,5 @@
+import { notFound } from "next/navigation";
+import { features } from "@leadforge/pipeline";
 import Link from "next/link";
 import { prisma } from "@leadforge/database";
 import { requireSession } from "@/lib/auth";
@@ -6,6 +8,7 @@ import { CampaignCreateForm } from "@/components/campaign-forms";
 export const dynamic = "force-dynamic";
 
 export default async function CampaignsPage() {
+  if (!features.campaigns) notFound();
   const session = await requireSession();
 
   const campaigns = await prisma.campaign.findMany({

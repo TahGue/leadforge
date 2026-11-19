@@ -1,0 +1,25 @@
+{
+  "url": "https://beispiel-logistik.de/impressum",
+  "region": "DE",
+  "archetype": "imprint",
+  "labeler": "synthetic",
+  "emails": [
+    {
+      "value": "info@beispiel-logistik.de",
+      "category": "GENERAL"
+    },
+    {
+      "value": "presse@beispiel-logistik.de",
+      "category": "PRESS"
+    }
+  ],
+  "phones": [
+    "+49401234567"
+  ],
+  "traps": [
+    {
+      "value": "name@domain.com",
+      "reason": "placeholder"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { prisma } from "@leadforge/database";
+import { prisma, type Prisma } from "@leadforge/database";
 import { parseBody, sourceCreate } from "@leadforge/shared";
 import { json, withAuth } from "@/lib/api";
 import { audit } from "@/lib/audit";
@@ -10,7 +10,7 @@ export const GET = withAuth(async (_request: NextRequest, session) => {
   const sources = await prisma.source.findMany({
     where: { organizationId: session.organization.id },
     orderBy: { createdAt: "desc" },
-    include: { _count: { select: { crawlTargets: true } } },
+    include: { _count: { select: { crawlJobs: true, discoveryRuns: true, observations: true } } },
   });
   return json({ data: sources });
 }, "VIEWER");
@@ -22,14 +22,19 @@ export const POST = withAuth(async (request: NextRequest, session) => {
       organizationId: session.organization.id,
       name: input.name,
       sourceType: input.sourceType,
+      adapter: input.adapter,
       baseUrl: input.baseUrl,
       policyNotes: input.policyNotes,
       tosUrl: input.tosUrl,
-      // Collection is blocked until a human records the policy review.
+      licenceName: input.licenceName,
+      licenceUrl: input.licenceUrl,
+      attribution: input.attribution,
+      config: input.config as Prisma.InputJsonValue,
+      // Collection is blocked until a person records the policy review.
       permitted: false,
+      policyStatus: "UNREVIEWED",
     },
   });
-
   await audit({
     organizationId: session.organization.id,
     actorId: session.user.id,
@@ -37,6 +42,5 @@ export const POST = withAuth(async (request: NextRequest, session) => {
     entity: "Source",
     entityId: source.id,
   });
-
   return json({ data: source }, 201);
 }, "ADMIN");

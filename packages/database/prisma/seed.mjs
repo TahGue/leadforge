@@ -1,8 +1,9 @@
 /**
  * Idempotent development seed.
  *
- * Creates one organization, an owner and an analyst, a permitted source and a
- * small demo dataset so every screen has something to show. It deliberately
+ * Creates one organization, an owner and an analyst, the built-in user source,
+ * two registry sources awaiting policy review, and a
+ * small demo dataset so every screen has something to show. Run reference.mjs first. It deliberately
  * does NOT approve any jurisdiction profile: legal sign-off is a human action.
  */
 import { randomBytes } from "node:crypto";
@@ -57,25 +58,72 @@ async function main() {
     update: { role: "ANALYST" },
   });
 
-  const permittedSource = await prisma.source.upsert({
+  const userSource = await prisma.source.upsert({
     where: { organizationId_name: { organizationId: org.id, name: "User-provided domains" } },
     create: {
       organizationId: org.id,
       name: "User-provided domains",
       sourceType: "IMPORT",
+      adapter: "domain_list",
       permitted: true,
-      policyNotes: "Domains explicitly supplied by the operator; only public pages are fetched.",
+      policyStatus: "APPROVED",
+      automatedAccessAllowed: true,
+      commercialReuseAllowed: true,
+      permittedUse: "Domains and company records supplied by the operator. Only public pages of these sites are crawled.",
+      policyNotes: "Built-in source for operator-supplied data.",
       tosReviewedAt: new Date(),
       reviewedBy: admin.id,
       rateLimit: 1,
     },
-    update: { permitted: true },
+    update: { adapter: "domain_list", permitted: true, policyStatus: "APPROVED" },
   });
 
+  // Registered but NOT approved: a person must review terms and licence first (spec 10).
+  await prisma.source.upsert({
+    where: { organizationId_name: { organizationId: org.id, name: "Open company dataset (file)" } },
+    create: {
+      organizationId: org.id,
+      name: "Open company dataset (file)",
+      sourceType: "DATASET",
+      adapter: "open_dataset",
+      policyStatus: "UNREVIEWED",
+      policyNotes:
+        "Reads a registry or open-data export placed under data/imports/. Record the dataset licence and terms before approving.",
+      config: { path: "data/imports/sample-registry.csv", format: "csv" },
+    },
+    update: {},
+  });
+  await prisma.source.upsert({
+    where: { organizationId_name: { organizationId: org.id, name: "OpenStreetMap (Overpass API)" } },
+    create: {
+      organizationId: org.id,
+      name: "OpenStreetMap (Overpass API)",
+      sourceType: "DIRECTORY",
+      adapter: "osm_overpass",
+      baseUrl: "https://overpass-api.de/api/interpreter",
+      tosUrl: "https://wiki.openstreetmap.org/wiki/Overpass_API#Public_Overpass_API_instances",
+      licenceName: "ODbL 1.0",
+      licenceUrl: "https://opendatacommons.org/licenses/odbl/1-0/",
+      attribution: "© OpenStreetMap contributors",
+      policyStatus: "UNREVIEWED",
+      policyNotes:
+        "Public Overpass instances are shared and rate limited; prefer a self-hosted instance for volume. ODbL requires attribution and share-alike for derived databases.",
+      rateLimitJson: { requestsPerMinute: 2 },
+      config: { endpoint: "https://overpass-api.de/api/interpreter", timeoutSeconds: 60 },
+    },
+    update: {},
+  });
+
+  const version = await prisma.industryTaxonomyVersion.findFirst({ where: { isCurrent: true } });
+  const industryByCode = async (code) =>
+    version
+      ? prisma.industry.findUnique({ where: { versionId_code: { versionId: version.id, code } } })
+      : null;
+
   const demo = [
-    { name: "Nordvind AB", domain: "example.com", countryCode: "SE", industry: "Manufacturing" },
-    { name: "Brightpath Ltd", domain: "example.org", countryCode: "GB", industry: "Consulting" },
-    { name: "Kontor GmbH", domain: "example.net", countryCode: "DE", industry: "Logistics" },
+    { name: "Nordvind AB", domain: "example.com", countryCode: "SE", city: "seed:SE:goteborg", industry: "manufacturing.machinery", label: "Manufacturing" },
+    { name: "Brightpath Ltd", domain: "example.org", countryCode: "GB", city: "seed:GB:london", industry: "professional-services.management-consulting", label: "Consulting" },
+    { name: "Kontor GmbH", domain: "example.net", countryCode: "DE", city: "seed:DE:hamburg", industry: "logistics-transport.road-freight", label: "Logistics" },
   ];
 
   for (const entry of demo) {
@@ -89,49 +137,70 @@ async function main() {
       update: {},
     });
 
-    const company = await prisma.company.upsert({
-      where: {
-        organizationId_name_countryCode: {
+    const link = await prisma.companyDomain.findUnique({ where: { domainId: domain.id } });
+    const company = link
+      ? await prisma.company.update({ where: { id: link.companyId }, data: { lastSeenAt: new Date() } })
+      : await prisma.company.create({
+          data: {
+            organizationId: org.id,
+            name: entry.name,
+            normalizedName: entry.name.toLowerCase().replace(/\s+(ab|ltd|gmbh)$/, ""),
+            countryCode: entry.countryCode,
+            industryLabel: entry.label,
+            website: `https://${entry.domain}`,
+            confidence: 0.8,
+          },
+        });
+
+    if (!link) {
+      await prisma.companyDomain.create({
+        data: { companyId: company.id, domainId: domain.id, isPrimary: true, verifiedAt: new Date() },
+      });
+      await prisma.sourceEvidence.create({
+        data: {
           organizationId: org.id,
-          name: entry.name,
-          countryCode: entry.countryCode,
+          companyId: company.id,
+          domainId: domain.id,
+          sourceId: userSource.id,
+          pageUrl: `https://${entry.domain}`,
+          fieldName: "domain",
+          extractedValue: entry.domain,
+          method: "seed",
+          extractorVersion: "seed",
         },
-      },
-      create: {
-        organizationId: org.id,
-        name: entry.name,
-        countryCode: entry.countryCode,
-        industry: entry.industry,
-        website: `https://${entry.domain}`,
-        confidence: 0.8,
-      },
-      update: { lastSeenAt: new Date() },
-    });
-
-    await prisma.companyDomain.upsert({
-      where: { domainId: domain.id },
-      create: {
-        companyId: company.id,
-        domainId: domain.id,
-        isPrimary: true,
-        verifiedAt: new Date(),
-      },
-      update: {},
-    });
-
-    await prisma.sourceEvidence.create({
-      data: {
-        organizationId: org.id,
-        companyId: company.id,
-        domainId: domain.id,
-        sourceId: permittedSource.id,
-        pageUrl: `https://${entry.domain}`,
-        fieldName: "domain",
-        extractedValue: entry.domain,
-        method: "seed",
-        extractorVersion: "seed",
-      },
-    });
+      });
+      const city = await prisma.city.findUnique({ where: { externalId: entry.city } });
+      if (city) {
+        await prisma.companyLocation.create({
+          data: {
+            companyId: company.id,
+            locationType: "HEADQUARTERS",
+            isHeadquarters: true,
+            countryIso2: entry.countryCode,
+            regionId: city.regionId,
+            cityId: city.id,
+            latitude: city.latitude,
+            longitude: city.longitude,
+            sourceId: userSource.id,
+            confidence: 0.9,
+            resolution: "RESOLVED",
+          },
+        });
+      }
+      const industry = await industryByCode(entry.industry);
+      if (industry) {
+        await prisma.companyIndustry.create({
+          data: {
+            companyId: company.id,
+            industryId: industry.id,
+            isPrimary: true,
+            confidence: 0.9,
+            method: "MANUAL",
+            sourceId: userSource.id,
+          },
+        });
+      }
+    }
 
     const emailAddress = `info@${entry.domain}`;
     const email = await prisma.emailAddress.upsert({
@@ -156,6 +225,9 @@ async function main() {
         organizationId: org.id,
         companyId: company.id,
         type: "GENERIC_BUSINESS",
+        category: "GENERAL",
+        isRoleBased: true,
+        sourceUrl: `https://${entry.domain}/contact`,
         confidence: 0.8,
       },
       update: {},

@@ -12,3 +12,6 @@ process.env.MAIL_ENABLED = "false";
 process.env.MAIL_TEST_ALLOWLIST = "";
 process.env.SMTP_FROM = "outreach@leadforge.test";
 process.env.WORKER_NO_AUTOSTART = "true";
+// The frozen campaign code keeps its tests (ADR-0020); freeze behaviour is tested separately.
+process.env.FEATURE_CAMPAIGNS = "true";
+process.env.REDIS_URL = "";

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { ApiError, type ErrorCode } from "@leadforge/shared";
+import { ApiError, describeError, type ErrorCode } from "@leadforge/shared";
 import {
   SESSION_COOKIE,
   requireRole,
@@ -7,6 +7,7 @@ import {
   resolveApiKey,
   type SessionContext,
 } from "./auth";
+import { features } from "@leadforge/pipeline";
 import { env } from "./env";
 
 export type RouteContext<P = Record<string, string>> = { params: Promise<P> };
@@ -28,7 +29,7 @@ export function handleError(error: unknown): NextResponse {
   if (error instanceof ApiError) {
     return problem(error.status, error.code, error.message, error.details);
   }
-  console.error("api_error", error);
+  console.error(JSON.stringify({ ts: new Date().toISOString(), level: "error", service: "web", event: "api_error", error: describeError(error) }));
   return problem(500, "INTERNAL", "Internal server error");
 }
 
@@ -59,7 +60,7 @@ async function authenticate(request: NextRequest): Promise<SessionContext> {
     const key = await resolveApiKey(bearer.slice(7).trim());
     if (!key) throw new ApiError(401, "UNAUTHENTICATED", "Invalid API key");
     return {
-      user: { id: key.id, email: `api-key:${key.prefix}`, name: key.name },
+      user: { id: `api-key:${key.id}`, email: `api-key:${key.prefix}`, name: key.name },
       organization: {
         id: key.organization.id,
         name: key.organization.name,
@@ -107,3 +108,24 @@ export function withPublic(handler: (request: NextRequest) => Promise<Response>)
 }
 
 export { SESSION_COOKIE };
+
+/**
+ * Campaign, eligibility and jurisdiction endpoints are frozen until the Phase 9
+ * legal review (ADR-0020). With FEATURE_CAMPAIGNS off they answer 404, exactly
+ * as if they did not exist.
+ */
+export function withCampaignAuth<P = Record<string, string>>(
+  handler: AuthedHandler<P>,
+  minimumRole?: "VIEWER" | "ANALYST" | "ADMIN" | "OWNER",
+) {
+  const inner = withAuth<P>(handler, minimumRole);
+  return async (request: NextRequest, context: RouteContext<P>): Promise<Response> => {
+    if (!features.campaigns) return problem(404, "NOT_FOUND", "Not found");
+    return inner(request, context);
+  };
+}
+
+/** The User id to store in foreign keys, or null for API-key integrations. */
+export function actorUserId(session: SessionContext): string | null {
+  return session.user.id.startsWith("api-key:") ? null : session.user.id;
+}

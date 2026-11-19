@@ -1,0 +1,53 @@
+{
+  "title": "LeadForge pipeline",
+  "uid": "leadforge-pipeline",
+  "schemaVersion": 39,
+  "time": { "from": "now-24h", "to": "now" },
+  "refresh": "1m",
+  "panels": [
+    {
+      "type": "stat", "title": "Companies", "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "leadforge_companies" }]
+    },
+    {
+      "type": "stat", "title": "Contacts", "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "leadforge_contacts" }]
+    },
+    {
+      "type": "stat", "title": "Evidence coverage", "unit": "percentunit", "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "leadforge_contacts_with_evidence / clamp_min(leadforge_contacts, 1)" }]
+    },
+    {
+      "type": "stat", "title": "Open duplicates", "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "leadforge_duplicate_candidates_open" }]
+    },
+    {
+      "type": "stat", "title": "Stale companies", "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "leadforge_companies_stale" }]
+    },
+    {
+      "type": "timeseries", "title": "Crawl jobs by status", "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "targets": [{ "expr": "leadforge_crawl_jobs", "legendFormat": "{{status}}" }]
+    },
+    {
+      "type": "timeseries", "title": "Pages fetched (rate)", "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [{ "expr": "rate(leadforge_crawl_pages_fetched_total[15m]) * 60", "legendFormat": "pages/min" }]
+    },
+    {
+      "type": "timeseries", "title": "HTTP status distribution", "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "targets": [{ "expr": "leadforge_crawl_pages", "legendFormat": "{{status}}" }]
+    },
+    {
+      "type": "timeseries", "title": "Email verification status", "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "targets": [{ "expr": "leadforge_emails", "legendFormat": "{{status}}" }]
+    },
+    {
+      "type": "timeseries", "title": "Orchestration queues", "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "targets": [{ "expr": "leadforge_queue_jobs{state=~\"waiting|active|failed\"}", "legendFormat": "{{queue}} {{state}}" }]
+    },
+    {
+      "type": "timeseries", "title": "Staged source records", "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "targets": [{ "expr": "leadforge_company_candidates", "legendFormat": "{{status}}" }]
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+import { registrableDomain } from "@leadforge/shared";
+
 /** Minimal RFC4180-ish CSV parser: quotes, escaped quotes, CRLF, BOM. */
 export function parseCsv(input: string): string[][] {
   const text = input.replace(/^\uFEFF/, "");
@@ -51,7 +53,10 @@ export interface CompanyCsvRow {
   name: string;
   domain: string;
   countryCode?: string;
+  city?: string;
+  region?: string;
   industry?: string;
+  registrationNumber?: string;
   website?: string;
 }
 
@@ -59,7 +64,10 @@ const COLUMN_ALIASES: Record<keyof CompanyCsvRow, string[]> = {
   name: ["name", "company", "company_name", "organisation", "organization"],
   domain: ["domain", "website", "url", "site"],
   countryCode: ["country_code", "country", "cc"],
+  city: ["city", "town", "ort", "stad"],
+  region: ["region", "state", "county", "lan", "province"],
   industry: ["industry", "sector", "category"],
+  registrationNumber: ["registration_number", "org_nr", "orgnr", "company_number", "vat", "registry_id"],
   website: ["website", "url", "site"],
 };
 
@@ -107,11 +115,19 @@ export function parseCompanyCsv(csv: string): {
       continue;
     }
 
+    const registrable = registrableDomain(domain);
+    if (!registrable) {
+      errors.push({ row: i + 1, message: `Not a public domain: "${domain}"` });
+      continue;
+    }
     rows.push({
       name,
-      domain,
+      domain: registrable,
       countryCode: pick(header, raw, COLUMN_ALIASES.countryCode)?.toUpperCase().slice(0, 2),
+      city: pick(header, raw, COLUMN_ALIASES.city),
+      region: pick(header, raw, COLUMN_ALIASES.region),
       industry: pick(header, raw, COLUMN_ALIASES.industry),
+      registrationNumber: pick(header, raw, COLUMN_ALIASES.registrationNumber),
       website: `https://${domain}`,
     });
   }

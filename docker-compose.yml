@@ -1,35 +1,53 @@
-# LeadForge — application stack
+# LeadForge — self-hosted stack (spec section 23)
 #
-#   docker compose up -d --build     # web, worker, postgres, redis, migrate
-#   docker compose logs -f web       # follow
-#   docker compose run --rm migrate  # re-apply migrations
+#   docker compose up -d --build                         # postgres, redis, migrate, web, worker
+#   docker compose --profile crawler up -d               # + Python discovery/crawl worker (outbound HTTP)
+#   docker compose --profile ai up -d                    # + Ollama local inference
+#   docker compose --profile monitoring up -d            # + Prometheus and Grafana
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis   # local development
 #
-# Mail delivery is a separate, gated overlay: docker-compose.mail.yml.
-# It is NOT started by default because outbound mail must be a deliberate act.
+# Nothing internal is published: only the web UI binds to 127.0.0.1:3000 (and
+# Grafana to 127.0.0.1:3001 with the monitoring profile). Put a TLS-terminating
+# reverse proxy in front for remote access (docs/deployment.md).
+#
+# Campaign delivery is frozen until the Phase 9 legal review (ADR-0020):
+# FEATURE_CAMPAIGNS defaults to false and no mail service is defined here.
 
 name: leadforge
 
+x-db-url: &db-url postgresql://${POSTGRES_USER:-leadforge}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-leadforge}?schema=public
+
 x-app-env: &app-env
-  DATABASE_URL: postgresql://${POSTGRES_USER:-leadforge}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-leadforge}?schema=public
+  DATABASE_URL: *db-url
   REDIS_URL: redis://redis:6379/0
   APP_URL: ${APP_URL:-http://localhost:3000}
   SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
+  METRICS_TOKEN: ${METRICS_TOKEN:-}
+  FEATURE_CAMPAIGNS: ${FEATURE_CAMPAIGNS:-false}
+  DISCOVERY_HIGH_VOLUME_THRESHOLD: ${DISCOVERY_HIGH_VOLUME_THRESHOLD:-5000}
+  VERIFICATION_TTL_DAYS: ${VERIFICATION_TTL_DAYS:-90}
+  COMPANY_FRESHNESS_DAYS: ${COMPANY_FRESHNESS_DAYS:-180}
+  RETENTION_EXTRACTION_CANDIDATES_DAYS: ${RETENTION_EXTRACTION_CANDIDATES_DAYS:-180}
+  RETENTION_AUDIT_DAYS: ${RETENTION_AUDIT_DAYS:-730}
+  RETENTION_STAGING_DAYS: ${RETENTION_STAGING_DAYS:-90}
+  CRAWLER_MAX_PAGES_PER_COMPANY: ${CRAWLER_MAX_PAGES_PER_COMPANY:-12}
+  CRAWLER_MAX_DEPTH: ${CRAWLER_MAX_DEPTH:-2}
+  CRAWLER_USER_AGENT: ${CRAWLER_USER_AGENT:-LeadForgeResearchBot/0.2 (+https://your-domain.example/crawler-policy)}
+  # Phase 9 only. Ignored while FEATURE_CAMPAIGNS=false.
   UNSUBSCRIBE_SIGNING_KEY: ${UNSUBSCRIBE_SIGNING_KEY:-}
-  MAIL_ENABLED: ${MAIL_ENABLED:-false}
-  MAIL_TEST_ALLOWLIST: ${MAIL_TEST_ALLOWLIST:-}
+  MAIL_ENABLED: "false"
   MAIL_POSTAL_ADDRESS: ${MAIL_POSTAL_ADDRESS:-}
-  SMTP_HOST: ${SMTP_HOST:-postfix}
-  SMTP_PORT: ${SMTP_PORT:-587}
-  SMTP_USER: ${SMTP_USER:-}
-  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-  SMTP_FROM: ${SMTP_FROM:-outreach@localhost}
-  SMTP_FROM_NAME: ${SMTP_FROM_NAME:-LeadForge}
   BOUNCE_INGEST_KEY: ${BOUNCE_INGEST_KEY:-}
+  # Local AI (profile "ai"): keyword → industry suggestions in the web app.
+  OLLAMA_ENABLED: ${OLLAMA_ENABLED:-false}
+  OLLAMA_URL: http://ollama:11434
+  OLLAMA_CLASSIFICATION_MODEL: ${OLLAMA_CLASSIFICATION_MODEL:-qwen3.8:27b}
+  OLLAMA_SUGGEST_TIMEOUT_MS: ${OLLAMA_SUGGEST_TIMEOUT_MS:-120000}
   NODE_ENV: production
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgis/postgis:16-3.5
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-leadforge}
@@ -44,10 +62,11 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+    shm_size: 256mb
     networks: [internal]
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     volumes:
@@ -59,13 +78,18 @@ services:
       retries: 10
     networks: [internal]
 
+  # Applies migrations, then loads geography and taxonomy reference data (idempotent).
   migrate:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-    command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy", "--schema", "packages/database/prisma/schema.prisma"]
+    command:
+      - sh
+      - -c
+      - node node_modules/prisma/build/index.js migrate deploy --schema packages/database/prisma/schema.prisma && node packages/database/prisma/reference.mjs
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-leadforge}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-leadforge}?schema=public
+      DATABASE_URL: *db-url
+      LEADFORGE_DATA_DIR: /app/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,12 +100,16 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_MAP_STYLE_URL: ${NEXT_PUBLIC_MAP_STYLE_URL:-}
     restart: unless-stopped
     environment: *app-env
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
@@ -97,8 +125,12 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+    deploy:
+      resources:
+        limits: { memory: 1g }
     networks: [internal, edge]
 
+  # Orchestration: normalization, dedup, verification, completion, retention.
   worker:
     build:
       context: .
@@ -107,38 +139,112 @@ services:
     environment:
       <<: *app-env
       WORKER_POLL_MS: ${WORKER_POLL_MS:-15000}
+      WORKER_STALE_RUNNING_MINUTES: ${WORKER_STALE_RUNNING_MINUTES:-30}
+      NORMALIZE_CONCURRENCY: ${NORMALIZE_CONCURRENCY:-8}
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    networks: [internal]
+    deploy:
+      resources:
+        limits: { memory: 768m }
+    # DNS/MX verification needs outbound DNS; it never connects to mail servers.
+    networks: [internal, egress]
 
-  # Python crawl/extract worker (opt-in: it makes outbound HTTP requests).
+  # Python discovery adapters + website crawler (opt-in: makes outbound HTTP requests).
   crawler:
     build:
       context: .
       dockerfile: services/Dockerfile
+      args:
+        INSTALL_BROWSER: ${CRAWLER_INSTALL_BROWSER:-false}
     restart: unless-stopped
-    command: ["python", "-m", "leadforge.worker"]
+    command: ["python", "-m", "leadforge.worker", "--role", "${CRAWLER_ROLE:-all}"]
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-leadforge}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-leadforge}?schema=public
-      CRAWLER_USER_AGENT: ${CRAWLER_USER_AGENT:-LeadForgeBot/0.1 (+https://localhost/bot)}
-      CRAWLER_DELAY_MS: ${CRAWLER_DELAY_MS:-2000}
+      DATABASE_URL: *db-url
+      CRAWLER_USER_AGENT: ${CRAWLER_USER_AGENT:-LeadForgeResearchBot/0.2 (+https://your-domain.example/crawler-policy)}
+      CRAWLER_GLOBAL_CONCURRENCY: ${CRAWLER_GLOBAL_CONCURRENCY:-4}
+      CRAWLER_DELAY_MS: ${CRAWLER_DELAY_MS:-3000}
+      CRAWLER_MAX_RESPONSE_MB: ${CRAWLER_MAX_RESPONSE_MB:-8}
+      CRAWLER_PLAYWRIGHT_ENABLED: ${CRAWLER_PLAYWRIGHT_ENABLED:-false}
+      CRAWLER_AUTO_PROMOTE_CONFIDENCE: ${CRAWLER_AUTO_PROMOTE_CONFIDENCE:-0.85}
+      ARTIFACT_DIR: /app/data/artifacts
+      ARTIFACT_RETENTION_DAYS: ${ARTIFACT_RETENTION_DAYS:-90}
+      IMPORTS_DIR: /app/data/imports
+      OLLAMA_ENABLED: ${OLLAMA_ENABLED:-false}
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_CLASSIFICATION_MODEL: ${OLLAMA_CLASSIFICATION_MODEL:-qwen3.8:27b}
     volumes:
       - artifacts:/app/data/artifacts
+      - ./data/imports:/app/data/imports:ro
     depends_on:
       postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    deploy:
+      resources:
+        limits: { memory: 1g }
     profiles: ["crawler"]
     networks: [internal, egress]
+
+  ollama:
+    image: ollama/ollama:0.12.6
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    # GPU: add `deploy.resources.reservations.devices` per the NVIDIA Container Toolkit docs.
+    profiles: ["ai"]
+    networks: [internal]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d
+    environment:
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infrastructure/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./infrastructure/monitoring/metrics-token:/etc/prometheus/metrics-token:ro
+      - prometheus:/prometheus
+    profiles: ["monitoring"]
+    networks: [internal]
+
+  grafana:
+    image: grafana/grafana:12.1.1
+    restart: unless-stopped
+    environment:
+      # Read from a git-ignored file so the password never sits in compose or env output.
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/grafana-admin-password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./infrastructure/monitoring/grafana-admin-password:/run/grafana-admin-password:ro
+      - ./infrastructure/monitoring/grafana:/etc/grafana/provisioning:ro
+      - grafana:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
+    profiles: ["monitoring"]
+    networks: [internal, edge]
 
 volumes:
   pgdata:
   redisdata:
   artifacts:
+  ollama:
+  prometheus:
+  grafana:
 
 networks:
   internal:
@@ -146,6 +252,6 @@ networks:
     internal: true
   edge:
     driver: bridge
-  # Crawler traffic only; no inbound access to internal services.
+  # Outbound traffic only (crawler HTTP, worker DNS); no inbound access to internal services.
   egress:
     driver: bridge

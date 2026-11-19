@@ -1,11 +1,11 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@leadforge/database";
 import { JURISDICTION_PROFILES } from "@leadforge/compliance";
-import { json, withAuth } from "@/lib/api";
+import { json, withCampaignAuth } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withAuth(async (_request: NextRequest) => {
+export const GET = withCampaignAuth(async (_request: NextRequest) => {
   const approvals = await prisma.jurisdictionProfile.findMany({
     where: { status: "APPROVED" },
     orderBy: { approvedAt: "desc" },

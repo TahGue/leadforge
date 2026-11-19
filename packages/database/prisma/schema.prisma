@@ -1,4 +1,4 @@
-// LeadForge schema ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â source of truth for all business state.
+// LeadForge schema — source of truth for all business state.
 // See docs/data-model.md for invariants and rationale.
 
 generator client {
@@ -54,6 +54,8 @@ enum CandidateKind {
   EMAIL
   COMPANY
   PERSON
+  PHONE
+  CONTACT_FORM
 }
 
 enum CandidateStatus {
@@ -68,12 +70,131 @@ enum RunStatus {
   FAILED
 }
 
-enum CrawlTargetStatus {
+enum CrawlJobStatus {
   QUEUED
   RUNNING
-  DONE
+  SUCCEEDED
+  PARTIAL
   FAILED
   BLOCKED
+  CANCELLED
+}
+
+enum ProjectStatus {
+  DRAFT
+  READY
+  QUEUED
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum GeographicMode {
+  CITY
+  REGION
+  COUNTRY
+  CONTINENT
+  WORLDWIDE
+  CUSTOM
+}
+
+enum FilterMode {
+  INCLUDE
+  EXCLUDE
+}
+
+enum GeoLevel {
+  CONTINENT
+  COUNTRY
+  REGION
+  CITY
+  POSTAL
+  POINT
+}
+
+enum PolicyStatus {
+  UNREVIEWED
+  APPROVED
+  RESTRICTED
+  DENIED
+}
+
+enum OperatingStatus {
+  ACTIVE
+  INACTIVE
+  NEWLY_REGISTERED
+  UNKNOWN
+}
+
+enum WebsiteStatus {
+  UNKNOWN
+  REACHABLE
+  UNREACHABLE
+  ABSENT
+}
+
+enum ReviewStatus {
+  UNREVIEWED
+  NEEDS_REVIEW
+  REVIEWED
+}
+
+enum ContactCategory {
+  GENERAL
+  SALES
+  PROCUREMENT
+  MANAGEMENT
+  PRESS
+  SUPPORT
+  CAREERS
+  NAMED
+  OTHER
+}
+
+enum SyntaxStatus {
+  UNKNOWN
+  VALID
+  INVALID
+}
+
+enum DnsStatus {
+  UNKNOWN
+  VALID
+  NXDOMAIN
+  ERROR
+}
+
+enum MxStatus {
+  UNKNOWN
+  VALID
+  MISSING
+  FALLBACK_A
+  ERROR
+}
+
+enum ProviderCategory {
+  BUSINESS
+  FREE_MAIL
+  DISPOSABLE
+  ROLE_BASED
+}
+
+enum DuplicateStatus {
+  OPEN
+  MERGED
+  DISMISSED
+}
+
+enum RunJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+  BLOCKED
+  CANCELLED
 }
 
 enum CampaignStatus {
@@ -136,33 +257,39 @@ enum ImportStatus {
 // ---------------------------------------------------------------------------
 
 model Organization {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
   countryCode String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  deletedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
 
-  memberships      Membership[]
-  apiKeys          ApiKey[]
-  companies        Company[]
-  contacts         Contact[]
-  evidence         SourceEvidence[]
+  memberships       Membership[]
+  apiKeys           ApiKey[]
+  companies         Company[]
+  contacts          Contact[]
+  evidence          SourceEvidence[]
   discoveryProjects DiscoveryProject[]
-  campaigns        Campaign[]
-  sources          Source[]
-  lawfulBases      LawfulBasisRecord[]
-  consents         ConsentRecord[]
-  suppressions     SuppressionEntry[]
-  decisions        EligibilityDecision[]
-  templates        EmailTemplate[]
-  events           EmailEvent[]
-  auditLogs        AuditLog[]
-  imports          ImportJob[]
-  dataRequests     DataSubjectRequest[]
-  crawlTargets     CrawlTarget[]
-  candidates       ExtractionCandidate[]
+  campaigns         Campaign[]
+  sources           Source[]
+  lawfulBases       LawfulBasisRecord[]
+  consents          ConsentRecord[]
+  suppressions      SuppressionEntry[]
+  decisions         EligibilityDecision[]
+  templates         EmailTemplate[]
+  events            EmailEvent[]
+  auditLogs         AuditLog[]
+  imports           ImportJob[]
+  dataRequests      DataSubjectRequest[]
+  crawlJobs         CrawlJob[]
+  candidates        ExtractionCandidate[]
+  discoveryRuns     DiscoveryRun[]
+  observations      SourceObservation[]
+  duplicates        CompanyDuplicateCandidate[]
+  savedSegments     SavedSegment[]
+  companyCandidates CompanyCandidate[]
+  domainEvents      DomainEvent[]
 }
 
 model User {
@@ -180,13 +307,14 @@ model User {
   sessions    Session[]
   auditLogs   AuditLog[]
   reviews     ExtractionCandidate[] @relation("Reviewer")
+  projects    DiscoveryProject[]
 }
 
 model Membership {
   userId         String
   organizationId String
-  role           Role      @default(VIEWER)
-  createdAt      DateTime  @default(now())
+  role           Role     @default(VIEWER)
+  createdAt      DateTime @default(now())
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -196,13 +324,13 @@ model Membership {
 }
 
 model Session {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  tokenHash String   @unique
+  tokenHash String    @unique
   expiresAt DateTime
   ip        String?
   userAgent String?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   revokedAt DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -232,38 +360,71 @@ model ApiKey {
 // ---------------------------------------------------------------------------
 
 model Company {
-  id             String        @id @default(cuid())
-  organizationId String
-  name           String
-  legalName      String?
-  description    String?       @db.Text
-  countryCode    String?
-  region         String?
-  city           String?
-  industry       String?
-  employeeRange  String?
-  revenueRange   String?
-  foundedYear    Int?
-  website        String?
-  status         CompanyStatus @default(ACTIVE)
-  confidence     Float         @default(0)
-  firstSeenAt    DateTime      @default(now())
-  lastSeenAt     DateTime      @default(now())
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  deletedAt      DateTime?
+  id                 String                   @id @default(cuid())
+  organizationId     String
+  name               String
+  normalizedName     String                   @default("")
+  legalName          String?
+  description        String?                  @db.Text
+  /// ISO 3166-1 alpha-2 of the headquarters country.
+  countryCode        String?
+  /// Raw industry label as supplied by a source or import. Not a classification:
+  /// see CompanyIndustry for taxonomy assignments.
+  industryLabel      String?                  @map("industry")
+  registrationNumber String?
+  legalForm          String?
+  employeeRange      String?
+  /// Revenue only when backed by a source; stored as a sourced estimate.
+  revenueRange       String?
+  foundedYear        Int?
+  operatingStatus    OperatingStatus          @default(UNKNOWN)
+  ownership          String?
+  website            String?
+  websiteStatus      WebsiteStatus            @default(UNKNOWN)
+  httpsEnabled       Boolean?
+  primaryLanguage    String?
+  hasContactPage     Boolean?
+  hasCareersPage     Boolean?
+  technologies       Json                     @default("[]")
+  socialProfiles     Json                     @default("[]")
+  status             CompanyStatus            @default(ACTIVE)
+  reviewStatus       ReviewStatus             @default(UNREVIEWED)
+  confidence         Float                    @default(0)
+  confidenceDetail   Json                     @default("{}")
+  firstSeenAt        DateTime                 @default(now())
+  lastSeenAt         DateTime                 @default(now())
+  lastCrawledAt      DateTime?
+  reviewedAt         DateTime?
+  expiresAt          DateTime?
+  tags               String[]                 @default([])
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  deletedAt          DateTime?
+  /// Generated full-text vector over name, description and industry label (SQL migration); read-only.
+  searchVector       Unsupported("tsvector")?
 
-  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  country      Country?                    @relation(fields: [countryCode], references: [iso2], onDelete: SetNull)
   domains      CompanyDomain[]
   contacts     Contact[]
   evidence     SourceEvidence[]
   candidates   ExtractionCandidate[]
+  locations    CompanyLocation[]
+  industries   CompanyIndustry[]
+  observations SourceObservation[]
+  crawlJobs    CrawlJob[]
+  projects     ProjectCompany[]
+  duplicateA   CompanyDuplicateCandidate[] @relation("DuplicateA")
+  duplicateB   CompanyDuplicateCandidate[] @relation("DuplicateB")
 
-  @@unique([organizationId, name, countryCode])
+  stagedRecords CompanyCandidate[]
+  @@index([organizationId, normalizedName])
+  @@index([organizationId, registrationNumber])
   @@index([organizationId, updatedAt(sort: Desc), id])
   @@index([organizationId, status])
-  @@index([countryCode, industry])
+  @@index([organizationId, countryCode])
   @@index([organizationId, createdAt(sort: Desc)])
+  @@index([searchVector], map: "Company_searchVector_idx", type: Gin)
 }
 
 model Domain {
@@ -282,7 +443,7 @@ model Domain {
 
   companyDomains CompanyDomain[]
   evidence       SourceEvidence[]
-  crawlTargets   CrawlTarget[]
+  crawlJobs      CrawlJob[]
   verification   DomainHealth?
 
   @@index([nextCrawlAt])
@@ -305,12 +466,12 @@ model CompanyDomain {
 }
 
 model DomainHealth {
-  domainId         String   @id
-  mxPresent        Boolean  @default(false)
-  spfPresent       Boolean  @default(false)
-  dmarcPresent     Boolean  @default(false)
-  catchAllSuspected Boolean @default(false)
-  lastCheckedAt    DateTime @default(now())
+  domainId          String   @id
+  mxPresent         Boolean  @default(false)
+  spfPresent        Boolean  @default(false)
+  dmarcPresent      Boolean  @default(false)
+  catchAllSuspected Boolean  @default(false)
+  lastCheckedAt     DateTime @default(now())
 
   domain Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
 }
@@ -320,30 +481,43 @@ model DomainHealth {
 // ---------------------------------------------------------------------------
 
 model Contact {
-  id             String        @id @default(cuid())
+  id             String          @id @default(cuid())
   organizationId String
   companyId      String
-  type           ContactType   @default(PERSON)
+  type           ContactType     @default(PERSON)
+  category       ContactCategory @default(GENERAL)
+  fullName       String?
   firstName      String?
   lastName       String?
   jobTitle       String?
   jobFunction    String?
   seniority      String?
   department     String?
-  confidence     Float         @default(0)
-  status         ContactStatus @default(ACTIVE)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  language       String?
+  isRoleBased    Boolean         @default(false)
+  phoneRaw       String?
+  phoneE164      String?
+  contactFormUrl String?
+  sourceUrl      String?
+  confidence     Float           @default(0)
+  status         ContactStatus   @default(ACTIVE)
+  observedAt     DateTime        @default(now())
+  reviewedAt     DateTime?
+  tags           String[]        @default([])
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
   deletedAt      DateTime?
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  company      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   emails       ContactEmail[]
   evidence     SourceEvidence[]
 
   @@index([companyId])
   @@index([organizationId, updatedAt(sort: Desc)])
   @@index([organizationId, lastName, firstName])
+  @@index([organizationId, category])
+  @@index([phoneE164])
 }
 
 model EmailAddress {
@@ -356,7 +530,6 @@ model EmailAddress {
   isRoleAccount         Boolean     @default(false)
   isDisposable          Boolean     @default(false)
   isFreeProvider        Boolean     @default(false)
-  patternInferred       Boolean     @default(false)
   firstSeenAt           DateTime    @default(now())
   lastVerifiedAt        DateTime?
   verificationExpiresAt DateTime?
@@ -381,9 +554,9 @@ model EmailAddress {
 model ContactEmail {
   contactId  String
   emailId    String
-  isPrimary  Boolean @default(false)
-  label      String  @default("WORK")
-  confidence Float   @default(0)
+  isPrimary  Boolean  @default(false)
+  label      String   @default("WORK")
+  confidence Float    @default(0)
   createdAt  DateTime @default(now())
 
   contact Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
@@ -393,88 +566,161 @@ model ContactEmail {
   @@index([emailId])
 }
 
-model EmailPattern {
-  id          String   @id @default(cuid())
-  domain      String
-  pattern     String
-  confidence  Float    @default(0)
-  sampleCount Int      @default(0)
-  source      String   @default("OBSERVED")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@unique([domain, pattern])
-}
-
 // ---------------------------------------------------------------------------
 // Sources, discovery, crawl
 // ---------------------------------------------------------------------------
 
 model Source {
-  id             String    @id @default(cuid())
-  organizationId String
-  name           String
-  sourceType     String
-  baseUrl        String?
-  permitted      Boolean   @default(false)
-  policyNotes    String?   @db.Text
-  tosUrl         String?
-  tosReviewedAt  DateTime?
-  reviewedBy     String?
-  rateLimit      Int       @default(1)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id                     String       @id @default(cuid())
+  organizationId         String
+  name                   String
+  sourceType             String
+  /// Adapter key used by the discovery engine ("domain_list", "open_dataset", "osm_overpass").
+  adapter                String?
+  baseUrl                String?
+  /// Automated access is approved for this source. Only effective with policyStatus = APPROVED.
+  permitted              Boolean      @default(false)
+  policyStatus           PolicyStatus @default(UNREVIEWED)
+  policyVersion          Int          @default(1)
+  policyNotes            String?      @db.Text
+  tosUrl                 String?
+  licenceName            String?
+  licenceUrl             String?
+  permittedUse           String?      @db.Text
+  attribution            String?
+  automatedAccessAllowed Boolean      @default(false)
+  commercialReuseAllowed Boolean      @default(false)
+  retentionDays          Int?
+  rateLimitJson          Json         @default("{}")
+  config                 Json         @default("{}")
+  enabled                Boolean      @default(true)
+  tosReviewedAt          DateTime?
+  reviewedBy             String?
+  rateLimit              Int          @default(1)
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  evidence     SourceEvidence[]
-  crawlTargets CrawlTarget[]
+  organization  Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  evidence      SourceEvidence[]
+  crawlJobs     CrawlJob[]
+  observations  SourceObservation[]
+  selections    DiscoverySourceSelection[]
+  discoveryRuns DiscoveryRun[]
+  locations     CompanyLocation[]
+  industries    CompanyIndustry[]
 
+  candidates    CompanyCandidate[]
   @@unique([organizationId, name])
   @@index([organizationId, permitted])
+  @@index([organizationId, policyStatus, enabled])
 }
 
 model DiscoveryProject {
-  id             String   @id @default(cuid())
-  organizationId String
-  name           String
-  description    String?
-  criteria       Json     @default("{}")
-  budget         Json     @default("{}")
-  status         String   @default("DRAFT")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                 String         @id @default(cuid())
+  organizationId     String
+  createdById        String?
+  name               String
+  description        String?
+  status             ProjectStatus  @default(DRAFT)
+  geographicMode     GeographicMode @default(COUNTRY)
+  maxCompanies       Int            @default(500)
+  maxPagesPerCompany Int            @default(12)
+  maxCrawlDepth      Int            @default(2)
+  minConfidence      Float          @default(0.5)
+  /// Typed by discoveryProjectSettings in @leadforge/shared: company, contact, website,
+  /// language, quality, exclusion and crawl-control filters.
+  settings           Json           @default("{}")
+  requiresApproval   Boolean        @default(false)
+  approvedById       String?
+  approvedAt         DateTime?
+  startedAt          DateTime?
+  finishedAt         DateTime?
+  lastError          String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  crawlTargets CrawlTarget[]
+  organization Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?                      @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  locations    DiscoveryLocation[]
+  industries   DiscoveryIndustryFilter[]
+  keywords     DiscoveryKeyword[]
+  sources      DiscoverySourceSelection[]
+  runs         DiscoveryRun[]
+  companies    ProjectCompany[]
+  crawlJobs    CrawlJob[]
 
+  candidates   CompanyCandidate[]
   @@index([organizationId, createdAt(sort: Desc)])
+  @@index([organizationId, status])
 }
 
-model CrawlTarget {
-  id             String            @id @default(cuid())
-  organizationId String
-  projectId      String?
-  sourceId       String?
-  domainId       String?
-  url            String
-  urlHash        String
-  priority       Int               @default(100)
-  depth          Int               @default(0)
-  status         CrawlTargetStatus @default(QUEUED)
-  attempts       Int               @default(0)
-  lastError      String?
-  scheduledFor   DateTime          @default(now())
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+model CrawlJob {
+  id               String         @id @default(cuid())
+  organizationId   String
+  projectId        String?
+  companyId        String?
+  sourceId         String?
+  domainId         String?
+  rootUrl          String
+  urlHash          String
+  status           CrawlJobStatus @default(QUEUED)
+  priority         Int            @default(100)
+  attemptCount     Int            @default(0)
+  maxAttempts      Int            @default(3)
+  maxPages         Int            @default(12)
+  maxDepth         Int            @default(2)
+  pagesFetched     Int            @default(0)
+  pagesSkipped     Int            @default(0)
+  bytesDownloaded  Int            @default(0)
+  durationMs       Int            @default(0)
+  policyStopReason String?
+  errorCode        String?
+  errorMessage     String?
+  metrics          Json           @default("{}")
+  scheduledFor     DateTime       @default(now())
+  nextRetryAt      DateTime?
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   project      DiscoveryProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  company      Company?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
   source       Source?           @relation(fields: [sourceId], references: [id], onDelete: SetNull)
   domain       Domain?           @relation(fields: [domainId], references: [id], onDelete: SetNull)
+  pages        CrawlPage[]
 
   @@unique([projectId, urlHash])
   @@index([organizationId, status, priority, scheduledFor])
-  @@index([status])
+  @@index([status, scheduledFor])
+  @@index([projectId, status])
+  @@index([companyId])
+}
+
+model CrawlPage {
+  id              String   @id @default(cuid())
+  crawlJobId      String
+  url             String   @db.Text
+  finalUrl        String?  @db.Text
+  depth           Int      @default(0)
+  pageKind        String   @default("OTHER")
+  httpStatus      Int?
+  contentType     String?
+  contentHash     String?
+  fetchedAt       DateTime @default(now())
+  durationMs      Int      @default(0)
+  bytesReceived   Int      @default(0)
+  renderMode      String   @default("HTTP")
+  parseStatus     String   @default("PENDING")
+  skipReason      String?
+  fetchArtifactId String?
+
+  job      CrawlJob       @relation(fields: [crawlJobId], references: [id], onDelete: Cascade)
+  artifact FetchArtifact? @relation(fields: [fetchArtifactId], references: [id], onDelete: SetNull)
+
+  @@index([crawlJobId, fetchedAt])
+  @@index([contentHash])
 }
 
 model FetchArtifact {
@@ -490,9 +736,11 @@ model FetchArtifact {
   robotsAllowed Boolean  @default(true)
   renderMode    String   @default("HTTP")
 
-  evidence   SourceEvidence[]
-  runs       ExtractionRun[]
-  candidates ExtractionCandidate[]
+  evidence     SourceEvidence[]
+  runs         ExtractionRun[]
+  candidates   ExtractionCandidate[]
+  pages        CrawlPage[]
+  observations SourceObservation[]
 
   @@index([bodySha256])
   @@index([fetchedAt])
@@ -508,7 +756,7 @@ model ExtractionRun {
   startedAt        DateTime  @default(now())
   finishedAt       DateTime?
 
-  artifact   FetchArtifact @relation(fields: [fetchArtifactId], references: [id], onDelete: Cascade)
+  artifact   FetchArtifact         @relation(fields: [fetchArtifactId], references: [id], onDelete: Cascade)
   candidates ExtractionCandidate[]
 
   @@unique([fetchArtifactId, extractorVersion])
@@ -516,31 +764,36 @@ model ExtractionRun {
 }
 
 model ExtractionCandidate {
-  id               String          @id @default(cuid())
-  organizationId   String
-  companyId        String?
-  runId            String?
-  fetchArtifactId  String
-  kind             CandidateKind
-  rawValue         String
-  normalizedValue  String
-  method           String
-  selector         String?
-  snippet          String?         @db.Text
-  confidence       Float           @default(0)
-  status           CandidateStatus @default(PENDING)
-  promotedEmailId  String?
+  id                String           @id @default(cuid())
+  organizationId    String
+  companyId         String?
+  runId             String?
+  fetchArtifactId   String
+  kind              CandidateKind
+  rawValue          String
+  normalizedValue   String
+  method            String
+  selector          String?
+  snippet           String?          @db.Text
+  confidence        Float            @default(0)
+  category          ContactCategory?
+  personName        String?
+  jobTitle          String?
+  pageUrl           String?          @db.Text
+  crawlJobId        String?
+  status            CandidateStatus  @default(PENDING)
+  promotedEmailId   String?
   promotedContactId String?
-  reviewedBy       String?
-  reviewedAt       DateTime?
-  rejectReason     String?
-  createdAt        DateTime        @default(now())
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  rejectReason      String?
+  createdAt         DateTime         @default(now())
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  company      Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  company      Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
   run          ExtractionRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
-  artifact     FetchArtifact @relation(fields: [fetchArtifactId], references: [id], onDelete: Cascade)
-  reviewer     User?         @relation("Reviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  artifact     FetchArtifact  @relation(fields: [fetchArtifactId], references: [id], onDelete: Cascade)
+  reviewer     User?          @relation("Reviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
 
   @@index([organizationId, status, createdAt])
   @@index([normalizedValue])
@@ -569,13 +822,13 @@ model SourceEvidence {
   observedAt       DateTime @default(now())
   contentHash      String?
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  company  Company?      @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  contact  Contact?      @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  email    EmailAddress? @relation(fields: [emailId], references: [id], onDelete: Cascade)
-  domain   Domain?       @relation(fields: [domainId], references: [id], onDelete: SetNull)
-  source   Source?       @relation(fields: [sourceId], references: [id], onDelete: SetNull)
-  artifact FetchArtifact? @relation(fields: [fetchArtifactId], references: [id], onDelete: SetNull)
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  company      Company?       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contact      Contact?       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  email        EmailAddress?  @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  domain       Domain?        @relation(fields: [domainId], references: [id], onDelete: SetNull)
+  source       Source?        @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  artifact     FetchArtifact? @relation(fields: [fetchArtifactId], references: [id], onDelete: SetNull)
 
   @@index([companyId, fieldName])
   @@index([emailId, observedAt(sort: Desc)])
@@ -583,14 +836,18 @@ model SourceEvidence {
 }
 
 model EmailVerification {
-  id        String   @id @default(cuid())
-  emailId   String
-  method    String
-  result    String
-  details   Json?
-  checkedAt DateTime @default(now())
-  expiresAt DateTime?
-  resolver  String?
+  id               String           @id @default(cuid())
+  emailId          String
+  method           String
+  result           String
+  details          Json?
+  checkedAt        DateTime         @default(now())
+  expiresAt        DateTime?
+  resolver         String?
+  syntaxStatus     SyntaxStatus     @default(UNKNOWN)
+  dnsStatus        DnsStatus        @default(UNKNOWN)
+  mxStatus         MxStatus         @default(UNKNOWN)
+  providerCategory ProviderCategory @default(BUSINESS)
 
   email EmailAddress @relation(fields: [emailId], references: [id], onDelete: Cascade)
 
@@ -617,15 +874,15 @@ model JurisdictionProfile {
 }
 
 model ConsentRecord {
-  id        String    @id @default(cuid())
+  id             String    @id @default(cuid())
   organizationId String
-  emailId   String
-  purpose   String
-  sourceUrl String?
-  evidence  Json      @default("{}")
-  obtainedAt DateTime
-  withdrawnAt DateTime?
-  createdAt DateTime  @default(now())
+  emailId        String
+  purpose        String
+  sourceUrl      String?
+  evidence       Json      @default("{}")
+  obtainedAt     DateTime
+  withdrawnAt    DateTime?
+  createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   email        EmailAddress @relation(fields: [emailId], references: [id], onDelete: Cascade)
@@ -634,15 +891,15 @@ model ConsentRecord {
 }
 
 model LawfulBasisRecord {
-  id              String    @id @default(cuid())
-  organizationId  String
-  emailId         String
-  basis           BasisType
-  assessment      Json      @default("{}")
+  id               String    @id @default(cuid())
+  organizationId   String
+  emailId          String
+  basis            BasisType
+  assessment       Json      @default("{}")
   jurisdictionCode String
-  campaignId      String?
-  reviewedBy      String?
-  createdAt       DateTime  @default(now())
+  campaignId       String?
+  reviewedBy       String?
+  createdAt        DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   email        EmailAddress @relation(fields: [emailId], references: [id], onDelete: Cascade)
@@ -651,15 +908,15 @@ model LawfulBasisRecord {
 }
 
 model SuppressionEntry {
-  id             String            @id @default(cuid())
-  organizationId String?
+  id              String            @id @default(cuid())
+  organizationId  String?
   emailNormalized String
-  domain         String?
-  reason         SuppressionReason
-  source         String?
-  createdAt      DateTime          @default(now())
-  liftedAt       DateTime?
-  liftedBy       String?
+  domain          String?
+  reason          SuppressionReason
+  source          String?
+  createdAt       DateTime          @default(now())
+  liftedAt        DateTime?
+  liftedBy        String?
 
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -669,18 +926,18 @@ model SuppressionEntry {
 }
 
 model EligibilityDecision {
-  id             String            @id @default(cuid())
-  organizationId String
-  emailId        String
-  campaignId     String?
-  contextHash    String
-  ruleSetVersion String
-  outcome        EligibilityOutcome
-  reasons        Json              @default("[]")
-  requiredActions Json             @default("[]")
-  decidedAt      DateTime          @default(now())
-  expiresAt      DateTime
-  supersededBy   String?
+  id              String             @id @default(cuid())
+  organizationId  String
+  emailId         String
+  campaignId      String?
+  contextHash     String
+  ruleSetVersion  String
+  outcome         EligibilityOutcome
+  reasons         Json               @default("[]")
+  requiredActions Json               @default("[]")
+  decidedAt       DateTime           @default(now())
+  expiresAt       DateTime
+  supersededBy    String?
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   email        EmailAddress @relation(fields: [emailId], references: [id], onDelete: Cascade)
@@ -712,23 +969,23 @@ model DataSubjectRequest {
 // ---------------------------------------------------------------------------
 
 model Campaign {
-  id               String         @id @default(cuid())
-  organizationId   String
-  name             String
-  subject          String
-  bodyHtml         String         @db.Text
-  bodyText         String         @db.Text
-  status           CampaignStatus @default(DRAFT)
-  segmentDefinition Json          @default("{}")
-  jurisdictionScope String[]      @default([])
-  lawfulBasis      BasisType?
-  approvedBy       String?
-  approvedAt       DateTime?
-  scheduledAt      DateTime?
-  startedAt        DateTime?
-  completedAt      DateTime?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  id                String         @id @default(cuid())
+  organizationId    String
+  name              String
+  subject           String
+  bodyHtml          String         @db.Text
+  bodyText          String         @db.Text
+  status            CampaignStatus @default(DRAFT)
+  segmentDefinition Json           @default("{}")
+  jurisdictionScope String[]       @default([])
+  lawfulBasis       BasisType?
+  approvedBy        String?
+  approvedAt        DateTime?
+  scheduledAt       DateTime?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
   organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   recipients   CampaignRecipient[]
@@ -740,18 +997,18 @@ model Campaign {
 }
 
 model CampaignRecipient {
-  id                     String          @id @default(cuid())
-  campaignId             String
-  emailId                String
-  emailSnapshot          String
-  status                 RecipientStatus @default(PENDING)
-  eligibilityDecisionId  String?
-  queuedAt               DateTime        @default(now())
-  sentAt                 DateTime?
-  error                  String?
+  id                    String          @id @default(cuid())
+  campaignId            String
+  emailId               String
+  emailSnapshot         String
+  status                RecipientStatus @default(PENDING)
+  eligibilityDecisionId String?
+  queuedAt              DateTime        @default(now())
+  sentAt                DateTime?
+  error                 String?
 
-  campaign Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  email    EmailAddress @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  campaign Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  email    EmailAddress   @relation(fields: [emailId], references: [id], onDelete: Cascade)
   sends    CampaignSend[]
 
   @@unique([campaignId, emailId])
@@ -768,8 +1025,8 @@ model CampaignSend {
   smtpResponse      String?
   sentAt            DateTime @default(now())
 
-  campaign  Campaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  recipient CampaignRecipient  @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  campaign  Campaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  recipient CampaignRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
 
   @@index([campaignId, sentAt])
 }
@@ -827,16 +1084,16 @@ model UnsubscribeToken {
 // ---------------------------------------------------------------------------
 
 model AuditLog {
-  id         String   @id @default(cuid())
+  id             String   @id @default(cuid())
   organizationId String?
-  actorId    String?
-  action     String
-  entity     String
-  entityId   String?
-  metadata   Json     @default("{}")
-  ip         String?
-  requestId  String?
-  createdAt  DateTime @default(now())
+  actorId        String?
+  action         String
+  entity         String
+  entityId       String?
+  metadata       Json     @default("{}")
+  ip             String?
+  requestId      String?
+  createdAt      DateTime @default(now())
 
   organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   actor        User?         @relation(fields: [actorId], references: [id], onDelete: SetNull)
@@ -847,14 +1104,15 @@ model AuditLog {
 }
 
 model DomainEvent {
-  id            String   @id @default(cuid())
+  id             String   @id @default(cuid())
   organizationId String?
-  type          String
-  aggregateType String
-  aggregateId   String
-  payload       Json     @default("{}")
-  occurredAt    DateTime @default(now())
+  type           String
+  aggregateType  String
+  aggregateId    String
+  payload        Json     @default("{}")
+  occurredAt     DateTime @default(now())
 
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   @@index([aggregateType, aggregateId])
   @@index([occurredAt])
 }
@@ -875,4 +1133,521 @@ model ImportJob {
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([organizationId, createdAt(sort: Desc)])
+}
+
+// ---------------------------------------------------------------------------
+// Geography (spec section 6). Global reference data, not tenant-scoped.
+// Spatial columns (geography(Point,4326)) are managed in SQL migrations.
+// ---------------------------------------------------------------------------
+
+model GeoImportBatch {
+  id          String   @id @default(cuid())
+  source      String
+  version     String
+  licence     String
+  attribution String
+  fileName    String?
+  rowCount    Int      @default(0)
+  notes       String?
+  importedAt  DateTime @default(now())
+
+  countries Country[]
+  regions   AdminRegion[]
+  cities    City[]
+  postals   PostalArea[]
+}
+
+model Continent {
+  code      String @id
+  name      String
+  geonameId Int?   @unique
+
+  countries Country[]
+}
+
+model Country {
+  iso2          String   @id
+  iso3          String?  @unique
+  isoNumeric    Int?
+  name          String
+  continentCode String
+  capital       String?
+  population    BigInt?
+  geonameId     Int?     @unique
+  latitude      Float?
+  longitude     Float?
+  importBatchId String?
+  updatedAt     DateTime @updatedAt
+
+  continent     Continent           @relation(fields: [continentCode], references: [code])
+  importBatch   GeoImportBatch?     @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  regions       AdminRegion[]
+  cities        City[]
+  postals       PostalArea[]
+  companies     Company[]
+  locations     CompanyLocation[]
+  discoveryLocs DiscoveryLocation[]
+
+  @@index([continentCode])
+}
+
+model AdminRegion {
+  id            String   @id @default(cuid())
+  countryIso2   String
+  /// Stable external code, e.g. GeoNames admin1 "SE.28".
+  code          String
+  /// ISO 3166-2 subdivision code, e.g. "SE-O", when known.
+  isoCode       String?
+  name          String
+  asciiName     String?
+  geonameId     Int?     @unique
+  latitude      Float?
+  longitude     Float?
+  importBatchId String?
+  updatedAt     DateTime @updatedAt
+
+  country       Country             @relation(fields: [countryIso2], references: [iso2], onDelete: Cascade)
+  importBatch   GeoImportBatch?     @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  cities        City[]
+  postals       PostalArea[]
+  locations     CompanyLocation[]
+  discoveryLocs DiscoveryLocation[]
+
+  @@unique([countryIso2, code])
+  @@index([isoCode])
+}
+
+model City {
+  id          String  @id @default(cuid())
+  countryIso2 String
+  regionId    String?
+  /// Stable external identifier: "geonames:<id>" or "seed:<country>:<slug>".
+  externalId  String  @unique
+  name        String
+  asciiName   String
+  geonameId   Int?    @unique
+  latitude    Float
+  longitude   Float
+
+  /// Generated from latitude/longitude (SQL migration); read-only.
+  geog          Unsupported("geography(Point, 4326)")?
+  population    Int?
+  timezone      String?
+  importBatchId String?
+  updatedAt     DateTime                               @updatedAt
+
+  country       Country             @relation(fields: [countryIso2], references: [iso2], onDelete: Cascade)
+  region        AdminRegion?        @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  importBatch   GeoImportBatch?     @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  postals       PostalArea[]
+  locations     CompanyLocation[]
+  discoveryLocs DiscoveryLocation[]
+
+  @@index([countryIso2, asciiName])
+  @@index([regionId])
+  @@index([population(sort: Desc)])
+  @@index([geog], map: "City_geog_idx", type: Gist)
+}
+
+model PostalArea {
+  id            String  @id @default(cuid())
+  countryIso2   String
+  code          String
+  regionId      String?
+  cityId        String?
+  placeName     String?
+  latitude      Float?
+  longitude     Float?
+  importBatchId String?
+
+  country       Country             @relation(fields: [countryIso2], references: [iso2], onDelete: Cascade)
+  region        AdminRegion?        @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  city          City?               @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  importBatch   GeoImportBatch?     @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  discoveryLocs DiscoveryLocation[]
+
+  @@unique([countryIso2, code])
+}
+
+model GeoAlias {
+  id         String  @id @default(cuid())
+  /// COUNTRY | REGION | CITY
+  entityType String
+  entityId   String
+  name       String
+  normalized String
+  language   String?
+
+  @@unique([entityType, entityId, normalized])
+  @@index([normalized, entityType])
+}
+
+model CompanyLocation {
+  id             String  @id @default(cuid())
+  companyId      String
+  /// HEADQUARTERS | BRANCH | UNKNOWN
+  locationType   String  @default("UNKNOWN")
+  isHeadquarters Boolean @default(false)
+  addressLine    String?
+  postalCode     String?
+  rawText        String?
+  countryIso2    String?
+  regionId       String?
+  cityId         String?
+  latitude       Float?
+  longitude      Float?
+
+  /// Generated from latitude/longitude (SQL migration); read-only.
+  geog       Unsupported("geography(Point, 4326)")?
+  sourceId   String?
+  confidence Float                                  @default(0)
+  /// RESOLVED | UNRESOLVED | AMBIGUOUS
+  resolution String                                 @default("UNRESOLVED")
+  observedAt DateTime                               @default(now())
+  createdAt  DateTime                               @default(now())
+
+  company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  country Country?     @relation(fields: [countryIso2], references: [iso2], onDelete: SetNull)
+  region  AdminRegion? @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  city    City?        @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  source  Source?      @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([countryIso2, regionId, cityId])
+  @@index([cityId])
+  @@index([resolution])
+  @@index([geog], map: "CompanyLocation_geog_idx", type: Gist)
+}
+
+// ---------------------------------------------------------------------------
+// Industry taxonomy (spec section 7). Global, versioned.
+// ---------------------------------------------------------------------------
+
+model IndustryTaxonomyVersion {
+  id          String   @id @default(cuid())
+  taxonomy    String
+  version     String
+  isCurrent   Boolean  @default(false)
+  notes       String?
+  publishedAt DateTime @default(now())
+
+  industries Industry[]
+
+  @@unique([taxonomy, version])
+}
+
+model Industry {
+  id          String  @id @default(cuid())
+  versionId   String
+  parentId    String?
+  code        String
+  name        String
+  description String?
+  level       Int     @default(0)
+  language    String  @default("en")
+  isActive    Boolean @default(true)
+
+  version       IndustryTaxonomyVersion   @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  parent        Industry?                 @relation("IndustryTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children      Industry[]                @relation("IndustryTree")
+  externalCodes IndustryExternalCode[]
+  aliases       IndustryAlias[]
+  companies     CompanyIndustry[]
+  filters       DiscoveryIndustryFilter[]
+
+  @@unique([versionId, code])
+  @@index([parentId])
+}
+
+model IndustryExternalCode {
+  id            String  @id @default(cuid())
+  industryId    String
+  /// NACE | ISIC | NAICS | SNI
+  scheme        String
+  schemeVersion String
+  code          String
+  label         String?
+
+  industry Industry @relation(fields: [industryId], references: [id], onDelete: Cascade)
+
+  @@unique([industryId, scheme, code])
+  @@index([scheme, code])
+}
+
+model IndustryAlias {
+  id         String @id @default(cuid())
+  industryId String
+  alias      String
+  normalized String
+  language   String @default("en")
+
+  industry Industry @relation(fields: [industryId], references: [id], onDelete: Cascade)
+
+  @@unique([industryId, normalized])
+  @@index([normalized])
+}
+
+model CompanyIndustry {
+  id         String   @id @default(cuid())
+  companyId  String
+  industryId String
+  isPrimary  Boolean  @default(false)
+  confidence Float    @default(0)
+  /// MANUAL | IMPORT | ALIAS | SOURCE | AI
+  method     String
+  sourceId   String?
+  evidence   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  industry Industry @relation(fields: [industryId], references: [id], onDelete: Cascade)
+  source   Source?  @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, industryId])
+  @@index([industryId])
+}
+
+// ---------------------------------------------------------------------------
+// Discovery project filters, runs and results (spec sections 5 and 15)
+// ---------------------------------------------------------------------------
+
+model DiscoveryLocation {
+  id            String     @id @default(cuid())
+  projectId     String
+  mode          FilterMode @default(INCLUDE)
+  level         GeoLevel
+  continentCode String?
+  countryIso2   String?
+  regionId      String?
+  cityId        String?
+  postalAreaId  String?
+  postalPrefix  String?
+  latitude      Float?
+  longitude     Float?
+
+  /// Generated from latitude/longitude (SQL migration); read-only.
+  geog          Unsupported("geography(Point, 4326)")?
+  radiusKm      Float?
+  includeNearby Boolean                                @default(false)
+
+  project DiscoveryProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  country Country?         @relation(fields: [countryIso2], references: [iso2], onDelete: Cascade)
+  region  AdminRegion?     @relation(fields: [regionId], references: [id], onDelete: Cascade)
+  city    City?            @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  postal  PostalArea?      @relation(fields: [postalAreaId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([geog], map: "DiscoveryLocation_geog_idx", type: Gist)
+}
+
+model DiscoveryIndustryFilter {
+  id                 String     @id @default(cuid())
+  projectId          String
+  industryId         String
+  mode               FilterMode @default(INCLUDE)
+  isPrimary          Boolean    @default(false)
+  includeDescendants Boolean    @default(true)
+
+  project  DiscoveryProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  industry Industry         @relation(fields: [industryId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, industryId])
+}
+
+model DiscoveryKeyword {
+  id          String     @id @default(cuid())
+  projectId   String
+  keyword     String
+  /// GENERAL | PRODUCT | SERVICE | TECHNOLOGY | DOMAIN
+  keywordType String     @default("GENERAL")
+  mode        FilterMode @default(INCLUDE)
+  language    String?
+
+  project DiscoveryProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model DiscoverySourceSelection {
+  id            String  @id @default(cuid())
+  projectId     String
+  sourceId      String
+  enabled       Boolean @default(true)
+  configuration Json    @default("{}")
+
+  project DiscoveryProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  source  Source           @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, sourceId])
+}
+
+/// One source search for one project. Claimed by the Python discovery worker.
+model DiscoveryRun {
+  id               String       @id @default(cuid())
+  organizationId   String
+  projectId        String
+  sourceId         String
+  status           RunJobStatus @default(QUEUED)
+  attemptCount     Int          @default(0)
+  maxAttempts      Int          @default(3)
+  query            Json         @default("{}")
+  candidatesFound  Int          @default(0)
+  companiesCreated Int          @default(0)
+  companiesMatched Int          @default(0)
+  policyStopReason String?
+  errorCode        String?
+  errorMessage     String?
+  metrics          Json         @default("{}")
+  scheduledFor     DateTime     @default(now())
+  nextRetryAt      DateTime?
+  startedAt        DateTime?
+  /// Refreshed by the discovery worker while the run is in progress; lease recovery reads it.
+  heartbeatAt      DateTime?
+  finishedAt       DateTime?
+  createdAt        DateTime     @default(now())
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      DiscoveryProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  source       Source              @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  observations SourceObservation[]
+
+  candidates   CompanyCandidate[]
+  @@unique([projectId, sourceId])
+  @@index([status, scheduledFor])
+}
+
+model ProjectCompany {
+  projectId     String
+  companyId     String
+  /// SOURCE | IMPORT | EXISTING
+  discoveredVia String   @default("SOURCE")
+  sourceId      String?
+  matchedAt     DateTime @default(now())
+
+  project DiscoveryProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  company Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, companyId])
+  @@index([companyId])
+}
+
+/// A field value as observed in a source record (spec section 10, source evidence).
+model SourceObservation {
+  id             String   @id @default(cuid())
+  organizationId String
+  sourceId       String
+  companyId      String?
+  discoveryRunId String?
+  sourceRecordId String?
+  fieldName      String
+  fieldValue     String   @db.Text
+  sourceUrl      String?  @db.Text
+  policyVersion  Int      @default(1)
+  licence        String?
+  confidence     Float    @default(0)
+  rawArtifactId  String?
+  observedAt     DateTime @default(now())
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  source       Source         @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  company      Company?       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  run          DiscoveryRun?  @relation(fields: [discoveryRunId], references: [id], onDelete: SetNull)
+  artifact     FetchArtifact? @relation(fields: [rawArtifactId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, fieldName])
+  @@index([sourceId, sourceRecordId])
+}
+
+model CompanyDuplicateCandidate {
+  id             String          @id @default(cuid())
+  organizationId String
+  companyAId     String
+  companyBId     String
+  score          Float
+  signals        Json            @default("[]")
+  status         DuplicateStatus @default(OPEN)
+  reviewedBy     String?
+  reviewedAt     DateTime?
+  createdAt      DateTime        @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  companyA     Company      @relation("DuplicateA", fields: [companyAId], references: [id], onDelete: Cascade)
+  companyB     Company      @relation("DuplicateB", fields: [companyBId], references: [id], onDelete: Cascade)
+
+  @@unique([companyAId, companyBId])
+  @@index([organizationId, status])
+}
+
+model SavedSegment {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  /// COMPANIES | CONTACTS
+  entity         String
+  filters        Json     @default("{}")
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, name])
+}
+
+// ---------------------------------------------------------------------------
+// Discovery staging: raw company records from source adapters, before
+// normalization and deduplication (spec section 9, stages 4-5).
+// ---------------------------------------------------------------------------
+
+enum StagingStatus {
+  PENDING
+  CREATED
+  MERGED
+  REJECTED
+}
+
+model CompanyCandidate {
+  id                 String        @id @default(cuid())
+  organizationId     String
+  projectId          String
+  sourceId           String
+  runId              String?
+  sourceRecordId     String
+  sourceUrl          String?       @db.Text
+  name               String
+  website            String?
+  registrationNumber String?
+  legalForm          String?
+  description        String?       @db.Text
+  countryIso2        String?
+  regionName         String?
+  cityName           String?
+  postalCode         String?
+  addressLine        String?
+  latitude           Float?
+  longitude          Float?
+  phone              String?
+  industryLabel      String?
+  /// [{ scheme: "NACE", code: "41.20" }]
+  industryCodes      Json          @default("[]")
+  employeeRange      String?
+  foundedYear        Int?
+  raw                Json          @default("{}")
+  licence            String?
+  status             StagingStatus @default(PENDING)
+  rejectReason       String?
+  companyId          String?
+  createdAt          DateTime      @default(now())
+  processedAt        DateTime?
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      DiscoveryProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  source       Source            @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  run          DiscoveryRun?     @relation(fields: [runId], references: [id], onDelete: SetNull)
+  company      Company?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  @@unique([projectId, sourceId, sourceRecordId])
+  @@index([status, createdAt])
+  @@index([projectId, status])
+  @@index([organizationId])
 }

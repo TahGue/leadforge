@@ -10,14 +10,18 @@ export async function audit(params: {
   ip?: string | null;
   requestId?: string | null;
 }): Promise<void> {
+  // API-key actors are not Users; keep their identity in metadata instead of the FK.
+  const apiKeyActor = params.actorId?.startsWith("api-key:") ? params.actorId : null;
   await prisma.auditLog.create({
     data: {
       organizationId: params.organizationId,
-      actorId: params.actorId ?? null,
+      actorId: apiKeyActor ? null : (params.actorId ?? null),
       action: params.action,
       entity: params.entity,
       entityId: params.entityId ?? null,
-      metadata: params.metadata ?? {},
+      metadata: apiKeyActor
+        ? ({ ...((params.metadata as Record<string, unknown> | undefined) ?? {}), actor: apiKeyActor } as Prisma.InputJsonValue)
+        : (params.metadata ?? {}),
       ip: params.ip ?? null,
       requestId: params.requestId ?? null,
     },

@@ -1,14 +1,14 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@leadforge/database";
 import { ApiError, normalizeEmail } from "@leadforge/shared";
-import { json, withAuth } from "@/lib/api";
+import { json, withCampaignAuth } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 import { createUnsubscribeLink, renderFooter, sendCampaignEmail } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
 
-export const POST = withAuth<{ id: string }>(async (request, session, params) => {
+export const POST = withCampaignAuth<{ id: string }>(async (request, session, params) => {
   const body = (await request.json().catch(() => ({}))) as { to?: string };
   const campaign = await prisma.campaign.findFirst({
     where: { id: params.id, organizationId: session.organization.id },

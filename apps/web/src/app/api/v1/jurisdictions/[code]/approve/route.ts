@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@leadforge/database";
 import { JURISDICTION_PROFILES } from "@leadforge/compliance";
 import { ApiError } from "@leadforge/shared";
-import { json, withAuth } from "@/lib/api";
+import { json, withCampaignAuth } from "@/lib/api";
 import { audit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  * Records human legal sign-off for a jurisdiction profile. This is the only
  * path that enables real sending in a country.
  */
-export const POST = withAuth<{ code: string }>(async (_request, session, params) => {
+export const POST = withCampaignAuth<{ code: string }>(async (_request, session, params) => {
   const code = params.code.toUpperCase();
   const profile = JURISDICTION_PROFILES[code as keyof typeof JURISDICTION_PROFILES];
   if (!profile) throw new ApiError(404, "NOT_FOUND", "No profile for that jurisdiction");
